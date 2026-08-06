@@ -365,9 +365,10 @@ for(const [name,data] of Object.entries(TRAVEL_PROGRESSION)){
 // ==========================================
 // CONSTANTS
 // ==========================================
-const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const ROTATION_START = new Date(2026, 5, 8); // June 8, 2026 = Monday (Week 1 anchor)
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const ROTATION_START = new Date(2026, 5, 8); // June 8, 2026 = Monday (week parity anchor)
+const SUNDAY_START = new Date(2026, 5, 7);   // June 7, 2026 = Sunday of Week 0
 
 // ==========================================
 // WORKOUT TEMPLATES — 3-day split, A/B weeks, 7 days each
@@ -375,7 +376,9 @@ const ROTATION_START = new Date(2026, 5, 8); // June 8, 2026 = Monday (Week 1 an
 const WORKOUT = {
   gym: {
     A: [
-      // Day 0 (Mon) — Upper A
+      // Day 0 (Sun) — Rest
+      {day:"Rest"},
+      // Day 1 (Mon) — Upper A
       {day:"Upper A", exercises:[
         {muscle:"Chest",exercise:"Barbell Bench Press",sets:3},
         {muscle:"Back",exercise:"Lat Pulldown",sets:3},
@@ -384,9 +387,9 @@ const WORKOUT = {
         {muscle:"Triceps",exercise:"Tricep Pushdown (rope)",sets:3},
         {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
       ]},
-      // Day 1 (Tue) — Rest
+      // Day 2 (Tue) — Rest
       {day:"Rest"},
-      // Day 2 (Wed) — Lower A
+      // Day 3 (Wed) — Lower A
       {day:"Lower A", exercises:[
         {muscle:"Quads",exercise:"Barbell Back Squat",sets:3},
         {muscle:"Hamstrings",exercise:"Romanian Deadlift",sets:3},
@@ -395,9 +398,9 @@ const WORKOUT = {
         {muscle:"Calves",exercise:"Standing Calf Raise",sets:3},
         {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
       ]},
-      // Day 3 (Thu) — Rest
+      // Day 4 (Thu) — Rest
       {day:"Rest"},
-      // Day 4 (Fri) — Arms & Delts A
+      // Day 5 (Fri) — Arms & Delts A
       {day:"Arms & Delts A", exercises:[
         {muscle:"Biceps",exercise:"Barbell Curl",sets:3},
         {muscle:"Triceps",exercise:"Skull Crushers",sets:3},
@@ -406,12 +409,13 @@ const WORKOUT = {
         {muscle:"Forearms",exercise:"Wrist Curl",sets:3},
         {muscle:"Core",exercise:"Cable Crunch",sets:3},
       ]},
-      // Day 5, 6 (Sat, Sun) — Rest
-      {day:"Rest"},
+      // Day 6 (Sat) — Rest
       {day:"Rest"},
     ],
     B: [
-      // Day 0 (Mon) — Upper B
+      // Day 0 (Sun) — Rest
+      {day:"Rest"},
+      // Day 1 (Mon) — Upper B
       {day:"Upper B", exercises:[
         {muscle:"Chest",exercise:"Incline Barbell Press",sets:3},
         {muscle:"Back",exercise:"Seated Cable Row",sets:3},
@@ -420,9 +424,9 @@ const WORKOUT = {
         {muscle:"Triceps",exercise:"Cable/Bar Overhead Extension",sets:3},
         {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
       ]},
-      // Day 1 (Tue) — Rest
+      // Day 2 (Tue) — Rest
       {day:"Rest"},
-      // Day 2 (Wed) — Lower B
+      // Day 3 (Wed) — Lower B
       {day:"Lower B", exercises:[
         {muscle:"Quads",exercise:"Front Squat",sets:3},
         {muscle:"Hamstrings",exercise:"Stiff Leg Deadlift",sets:3},
@@ -431,9 +435,9 @@ const WORKOUT = {
         {muscle:"Calves",exercise:"Standing Calf Raise",sets:3},
         {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
       ]},
-      // Day 3 (Thu) — Rest
+      // Day 4 (Thu) — Rest
       {day:"Rest"},
-      // Day 4 (Fri) — Arms & Delts B
+      // Day 5 (Fri) — Arms & Delts B
       {day:"Arms & Delts B", exercises:[
         {muscle:"Biceps",exercise:"Dumbbell Curl",sets:3},
         {muscle:"Triceps",exercise:"Tricep Pushdown (rope)",sets:3},
@@ -442,14 +446,15 @@ const WORKOUT = {
         {muscle:"Forearms",exercise:"Wrist Raises",sets:3},
         {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
       ]},
-      // Day 5, 6 — Rest
-      {day:"Rest"},
+      // Day 6 (Sat) — Rest
       {day:"Rest"},
     ]
   },
   travel: {
     A: [
-      // Day 0 (Mon) — Upper Travel A
+      // Day 0 (Sun) — Rest
+      {day:"Rest"},
+      // Day 1 (Mon) — Upper Travel A
       {day:"Upper Travel A", exercises:[
         {muscle:"Chest",exercise:"Band Chest Press",sets:3},
         {muscle:"Back",exercise:"Band Lat Pulldown",sets:3},
@@ -458,9 +463,9 @@ const WORKOUT = {
         {muscle:"Triceps",exercise:"Band Tricep Pushdown",sets:3},
         {muscle:"Core",exercise:"Plank",sets:3},
       ]},
-      // Day 1 — Rest
+      // Day 2 (Tue) — Rest
       {day:"Rest"},
-      // Day 2 (Wed) — Lower Travel A
+      // Day 3 (Wed) — Lower Travel A
       {day:"Lower Travel A", exercises:[
         {muscle:"Quads",exercise:"Band Squat",sets:3},
         {muscle:"Hamstrings",exercise:"Band Deadlift",sets:3},
@@ -469,9 +474,9 @@ const WORKOUT = {
         {muscle:"Calves",exercise:"Standing Calf Raise (BW)",sets:3},
         {muscle:"Core",exercise:"Lying Leg Raise",sets:3},
       ]},
-      // Day 3 — Rest
+      // Day 4 (Thu) — Rest
       {day:"Rest"},
-      // Day 4 (Fri) — Arms/Bands/Core A
+      // Day 5 (Fri) — Arms/Bands/Core A
       {day:"Arms/Bands/Core A", exercises:[
         {muscle:"Biceps",exercise:"Band Bicep Curl",sets:3},
         {muscle:"Triceps",exercise:"Overhead Band Extension",sets:3},
@@ -480,12 +485,13 @@ const WORKOUT = {
         {muscle:"Forearms",exercise:"Band Wrist Curl",sets:3},
         {muscle:"Core",exercise:"Band Pallof Press",sets:3},
       ]},
-      // Day 5, 6 — Rest
-      {day:"Rest"},
+      // Day 6 (Sat) — Rest
       {day:"Rest"},
     ],
     B: [
-      // Day 0 (Mon) — Upper Travel B
+      // Day 0 (Sun) — Rest
+      {day:"Rest"},
+      // Day 1 (Mon) — Upper Travel B
       {day:"Upper Travel B", exercises:[
         {muscle:"Chest",exercise:"Push-ups",sets:3},
         {muscle:"Back",exercise:"Band Row",sets:3},
@@ -494,9 +500,9 @@ const WORKOUT = {
         {muscle:"Triceps",exercise:"Tricep Kickback (band)",sets:3},
         {muscle:"Core",exercise:"Bicycle Crunch",sets:3},
       ]},
-      // Day 1 — Rest
+      // Day 2 (Tue) — Rest
       {day:"Rest"},
-      // Day 2 (Wed) — Lower Travel B
+      // Day 3 (Wed) — Lower Travel B
       {day:"Lower Travel B", exercises:[
         {muscle:"Quads",exercise:"Bodyweight Squat",sets:3},
         {muscle:"Hamstrings",exercise:"Band Good Morning",sets:3},
@@ -505,9 +511,9 @@ const WORKOUT = {
         {muscle:"Calves",exercise:"Standing Calf Raise (BW)",sets:3},
         {muscle:"Core",exercise:"Russian Twist",sets:3},
       ]},
-      // Day 3 — Rest
+      // Day 4 (Thu) — Rest
       {day:"Rest"},
-      // Day 4 (Fri) — Arms/Bands/Core B
+      // Day 5 (Fri) — Arms/Bands/Core B
       {day:"Arms/Bands/Core B", exercises:[
         {muscle:"Biceps",exercise:"Hammer Curl (band)",sets:3},
         {muscle:"Triceps",exercise:"Band Tricep Pushdown",sets:3},
@@ -516,8 +522,7 @@ const WORKOUT = {
         {muscle:"Forearms",exercise:"Band Wrist Curl",sets:3},
         {muscle:"Core",exercise:"Plank",sets:3},
       ]},
-      // Day 5, 6 — Rest
-      {day:"Rest"},
+      // Day 6 (Sat) — Rest
       {day:"Rest"},
     ]
   }
@@ -544,7 +549,7 @@ window._viewState = { mode: 'weekly', week: 0 };
 // CORE LOGIC — Week calculation
 // ==========================================
 function getWeekIndex(date) {
-  const diffDays = Math.floor((date - ROTATION_START) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.floor((date - SUNDAY_START) / (1000 * 60 * 60 * 24));
   return Math.floor(diffDays / 7);
 }
 
@@ -557,12 +562,12 @@ function getTodayInfo() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const weekIndex = getWeekIndex(today);
-  const dayOfWeek = (today.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const dayOfWeek = today.getDay(); // Sun=0 ... Sat=6
   return { weekIndex, dayOfWeek, parity: getWeekParity(weekIndex) };
 }
 
-function getMondayOfWeek(weekIndex) {
-  const ms = ROTATION_START.getTime() + weekIndex * 7 * 24 * 60 * 60 * 1000;
+function getSundayOfWeek(weekIndex) {
+  const ms = SUNDAY_START.getTime() + weekIndex * 7 * 24 * 60 * 60 * 1000;
   return new Date(ms);
 }
 
@@ -765,8 +770,9 @@ function migrateV2ToV3(data) {
   if (isCycleBased) {
     // Old: cycle → flatDay (0-13). Map to weekIndex+dayOfWeek.
     // ROTATION_START = June 8 2026 = Monday = cycle 0, flatDay 0
-    // flatDay 0-13 in cycle C → absolute day = C * 14 + flatDay
-    // weekIndex = floor(absDay / 7), dayOfWeek = absDay % 7
+    // SUNDAY_START = June 7 = Sunday of week 0 (Sun=0)
+    // flatDay 0 (Mon) → dayOfWeek 1, flatDay 6 (Sun) → dayOfWeek 0
+    // absDay = C * 14 + flatDay; dayOfWeek = (absDay + 1) % 7; weekIndex = floor((absDay + 1) / 7)
     Object.keys(oldLog).forEach(cycleStr => {
       const cycle = parseInt(cycleStr);
       const c = oldLog[cycleStr];
@@ -774,8 +780,8 @@ function migrateV2ToV3(data) {
       Object.keys(c).forEach(flatStr => {
         const flatDay = parseInt(flatStr);
         const absDay = cycle * 14 + flatDay;
-        const weekIndex = Math.floor(absDay / 7);
-        const dayOfWeek = absDay % 7;
+        const weekIndex = Math.floor((absDay + 1) / 7);
+        const dayOfWeek = (absDay + 1) % 7;
         if (!newLog[weekIndex]) newLog[weekIndex] = {};
         newLog[weekIndex][dayOfWeek] = c[flatStr];
       });
@@ -789,8 +795,8 @@ function migrateV2ToV3(data) {
       Object.keys(cn).forEach(flatStr => {
         const flatDay = parseInt(flatStr);
         const absDay = cycle * 14 + flatDay;
-        const weekIndex = Math.floor(absDay / 7);
-        const dayOfWeek = absDay % 7;
+        const weekIndex = Math.floor((absDay + 1) / 7);
+        const dayOfWeek = (absDay + 1) % 7;
         if (!newNotes[weekIndex]) newNotes[weekIndex] = {};
         newNotes[weekIndex][dayOfWeek] = cn[flatStr];
       });
@@ -804,8 +810,8 @@ function migrateV2ToV3(data) {
       Object.keys(cd).forEach(flatStr => {
         const flatDay = parseInt(flatStr);
         const absDay = cycle * 14 + flatDay;
-        const weekIndex = Math.floor(absDay / 7);
-        const dayOfWeek = absDay % 7;
+        const weekIndex = Math.floor((absDay + 1) / 7);
+        const dayOfWeek = (absDay + 1) % 7;
         if (!newDates[weekIndex]) newDates[weekIndex] = {};
         newDates[weekIndex][dayOfWeek] = cd[flatStr];
       });
@@ -819,8 +825,8 @@ function migrateV2ToV3(data) {
       Object.keys(cen).forEach(flatStr => {
         const flatDay = parseInt(flatStr);
         const absDay = cycle * 14 + flatDay;
-        const weekIndex = Math.floor(absDay / 7);
-        const dayOfWeek = absDay % 7;
+        const weekIndex = Math.floor((absDay + 1) / 7);
+        const dayOfWeek = (absDay + 1) % 7;
         if (!newExNotes[weekIndex]) newExNotes[weekIndex] = {};
         newExNotes[weekIndex][dayOfWeek] = cen[flatStr];
       });
@@ -833,7 +839,7 @@ function migrateV2ToV3(data) {
         const cycle = parseInt(cycleStr);
         for (let fd = 0; fd < 14; fd++) {
           const absDay = cycle * 14 + fd;
-          const wi = Math.floor(absDay / 7);
+          const wi = Math.floor((absDay + 1) / 7);
           seenWeeks.add(wi);
         }
       });
@@ -972,8 +978,8 @@ function renderWeek(weekIndex) {
   const parity = getWeekParity(weekIndex);
   const todayInfo = getTodayInfo();
   const isThisWeek = (weekIndex === todayInfo.weekIndex);
-  const monday = getMondayOfWeek(weekIndex);
-  const weekLabel = 'Week of ' + monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const sunday = getSundayOfWeek(weekIndex);
+  const weekLabel = 'Week of ' + sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const weekNum = weekIndex + 1; // Human-readable week number (1-based)
   const isArchived = archivedWeeks[weekIndex];
   const dd = getDayDates();
@@ -1140,15 +1146,17 @@ function renderWeek(weekIndex) {
 // ==========================================
 function renderMonth(centerWeek) {
   // Find the first Monday that starts the month containing centerWeek
-  const centerMonday = getMondayOfWeek(centerWeek);
-  const monthStart = new Date(centerMonday.getFullYear(), centerMonday.getMonth(), 1);
+  const centerSunday = getSundayOfWeek(centerWeek);
+  const monthStart = new Date(centerSunday.getFullYear(), centerSunday.getMonth(), 1);
   // Find week containing the 1st of the month
   const firstWeekIndex = getWeekIndex(monthStart);
   // Find the last day of the month
   const monthEnd = new Date(centerMonday.getFullYear(), centerMonday.getMonth() + 1, 0);
   const lastWeekIndex = getWeekIndex(monthEnd);
+  // Cap at 5 week rows
+  const maxWeekIndex = Math.min(lastWeekIndex, firstWeekIndex + 4);
 
-  const monthLabel = centerMonday.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthLabel = centerSunday.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const todayInfo = getTodayInfo();
   const dd = getDayDates();
   const sl = getSessionLog();
@@ -1167,14 +1175,14 @@ function renderMonth(centerWeek) {
   }
   html += '</div>';
 
-  for (let wi = firstWeekIndex; wi <= lastWeekIndex; wi++) {
+  for (let wi = firstWeekIndex; wi <= maxWeekIndex; wi++) {
     html += '<div class="month-week-row">';
     for (let dow = 0; dow < 7; dow++) {
-      const monday = getMondayOfWeek(wi);
-      const dayDate = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + dow);
+      const sunday = getSundayOfWeek(wi);
+      const dayDate = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + dow);
       const dayNum = dayDate.getDate();
       const isToday = wi === todayInfo.weekIndex && dow === todayInfo.dayOfWeek;
-      const isInMonth = dayDate.getMonth() === centerMonday.getMonth();
+      const isInMonth = dayDate.getMonth() === centerSunday.getMonth();
       const day = getWorkoutDay(wi, dow);
       const isWorkout = day.day !== 'Rest';
 
