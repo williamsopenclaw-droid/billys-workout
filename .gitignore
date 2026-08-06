@@ -1,0 +1,5 @@
+.DS_Store
+*.backup
+*.v2*-backup
+.v2*-backup
+.netlify/

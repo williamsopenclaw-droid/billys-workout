@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Billy's Workout</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f172a;--surface:#1e293b;--card:#334155;--border:#475569;
+  --text:#f1f5f9;--muted:#94a3b8;--accent:#38bdf8;--green:#4ade80;
+  --amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--pink:#f472b6;
+  --header-bg:#1a2332;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;padding-bottom:env(safe-area-inset-bottom);-webkit-tap-highlight-color:transparent}
+.app{max-width:600px;margin:0 auto;padding:12px}
+.header{text-align:center;padding:20px 0 4px}
+.header h1{font-size:20px;font-weight:700;letter-spacing:-0.5px}
+.header p{font-size:12px;color:var(--muted);margin-top:2px}
+.toolbar{display:flex;justify-content:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.install-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;background:var(--green);border:none;border-radius:10px;color:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s;box-shadow:0 2px 8px rgba(74,222,128,0.3)}
+.install-btn:active{opacity:.85;transform:scale(0.97)}
+.install-btn.hidden{display:none}
+.ios-guide{display:none;background:var(--card);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--muted);text-align:center}
+.ios-guide.show{display:block}
+.ios-guide span{color:var(--accent);font-weight:600}
+.tool-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
+.tool-btn:active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+
+/* Mode toggle */
+.mode-toggle{display:flex;justify-content:center;margin-bottom:12px}
+.mode-toggle-inner{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;gap:0}
+.mode-seg{display:flex;align-items:center;gap:5px;padding:7px 14px;border:none;background:transparent;color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
+.mode-seg.active{background:var(--accent);color:var(--bg);font-weight:600}
+.mode-seg:first-child{border-radius:9px 0 0 9px}
+.mode-seg:last-child{border-radius:0 9px 9px 0}
+.mode-seg:not(.active):active{background:rgba(56,189,248,0.1)}
+
+/* View bar — weekly/monthly toggle + nav */
+.view-bar{display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.view-toggle{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;gap:0}
+.view-seg{display:flex;align-items:center;gap:5px;padding:7px 12px;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
+.view-seg.active{background:var(--accent);color:var(--bg);font-weight:600}
+.view-seg:first-child{border-radius:9px 0 0 9px}
+.view-seg:last-child{border-radius:0 9px 9px 0}
+.view-seg:not(.active):active{background:rgba(56,189,248,0.1)}
+.week-nav{display:flex;align-items:center;gap:4px}
+.nav-btn{font-size:11px;padding:6px 10px}
+
+/* Week header badge */
+.week-header{display:flex;align-items:center;justify-content:center;gap:10px;margin:12px 0 14px;padding:0 4px}
+.week-badge{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.5px;padding:6px 14px;background:rgba(56,189,248,0.08);border-radius:8px;border:1px solid rgba(56,189,248,0.2);white-space:nowrap}
+.week-badge .parity{font-size:10px;color:var(--muted);font-weight:400}
+.archive-btn{font-size:10px;background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.archive-btn:active{background:var(--card);border-color:var(--accent);color:var(--accent)}
+.archived-banner{text-align:center;padding:12px;margin:4px 0 16px;font-size:11px;color:var(--muted);background:var(--card);border-radius:8px;border:1px dashed var(--border);opacity:0.7}
+
+/* Month grid */
+.month-grid{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.month-week-row{display:flex;gap:4px}
+.month-day{flex:1;min-width:0;border-radius:8px;padding:6px 4px;text-align:center;cursor:pointer;background:var(--surface);border:1px solid var(--border);transition:all .12s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px}
+.month-day:active{background:var(--card);border-color:var(--accent)}
+.month-day.rest{opacity:0.45}
+.month-day.today{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}
+.month-day .md-num{font-size:11px;font-weight:600;color:var(--muted)}
+.month-day.today .md-num{color:var(--green)}
+.month-day .md-name{font-size:9px;font-weight:700;color:var(--text);line-height:1.1;text-align:center}
+.month-day .md-count{font-size:8px;color:var(--muted)}
+.month-day .md-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.month-day.rest .md-name{color:var(--muted)}
+
+/* Day block */
+.day-block{margin-bottom:14px}
+.day-label{font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;padding:0 4px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}
+.day-label .day-count{color:var(--muted);font-weight:400;letter-spacing:0}
+.day-label .day-date{font-size:11px;color:var(--muted);cursor:pointer;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-family:inherit;max-width:130px}
+.day-label .day-date:focus{outline:none;border-color:var(--accent);color:var(--text)}
+.day-label .day-date.today{color:var(--green);border-color:var(--green)}
+.day-date-wrapper{display:flex;align-items:center;gap:4px}
+
+/* Spreadsheet table */
+.sheet{background:var(--surface);border-radius:10px;overflow:hidden}
+.sheet-header{display:flex;background:var(--header-bg);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.sheet-header .col{padding:8px 4px;text-align:center;border-bottom:1px solid var(--border)}
+.col-exercise{width:30%;text-align:left!important;padding-left:10px!important}
+.col-weight{width:16%}
+.col-set{width:12%}
+.col-check{width:5%}
+.col-notes{width:7%}
+
+.ex-row{display:flex;border-bottom:1px solid rgba(71,85,105,0.3);position:relative}
+.ex-row:last-child{border-bottom:none}
+.ex-row:active{background:rgba(255,255,255,0.02)}
+.ex-row.completed{opacity:.55}
+.ex-row.completed .rep-input{text-decoration:line-through;text-decoration-color:var(--green);text-decoration-thickness:2px}
+
+.col{flex-shrink:0}
+.cell{padding:6px 4px;display:flex;align-items:center;justify-content:center;min-height:40px}
+
+/* Exercise name cell */
+.ex-cell{padding:6px 4px 6px 10px;display:flex;align-items:flex-start;min-height:40px;gap:6px;cursor:pointer;flex-direction:column}
+.ex-main{display:flex;align-items:center;gap:6px;width:100%}
+.ex-color-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.ex-name-text{font-size:12px;font-weight:500;line-height:1.2;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word;flex:1}
+.ex-sets-label{font-size:9px;color:var(--muted);margin-top:1px;display:block}
+.vid-link{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:rgba(255,0,0,0.12);color:#ff4444;font-size:11px;cursor:pointer;text-decoration:none;flex-shrink:0;transition:all .12s}
+.vid-link:active{background:#ff0000;color:#fff;transform:scale(0.9)}
+
+/* Previous stats */
+.prev-stats{font-size:9px;color:var(--muted);padding-left:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.prev-stats .prev-label{color:var(--amber);font-weight:600}
+
+/* Weight cell */
+.weight-val{font-size:13px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:4px;min-width:42px;text-align:center;transition:background .1s;white-space:nowrap;overflow:hidden}
+.weight-val:active,.weight-val:focus{background:var(--card);outline:none}
+.weight-val.bumped{color:var(--green)}
+.weight-lbs{font-size:9px;color:var(--muted);display:block;margin-top:-1px}
+
+/* Rep input cells */
+.rep-input{width:34px;height:28px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;text-align:center;font-family:inherit;font-weight:600;-moz-appearance:textfield}
+.rep-input::-webkit-inner-spin-button,.rep-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.rep-input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.rep-input.filled{background:rgba(56,189,248,0.1);border-color:rgba(56,189,248,0.4)}
+.rep-input.met{background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.45)}
+
+/* Check column */
+.check-cell{font-size:16px;cursor:pointer;user-select:none}
+.check-cell.done{color:var(--green)}
+
+/* Previous workout row */
+.prev-hint{display:block;font-size:9px;color:var(--muted);opacity:0.55;text-align:center;margin-top:2px;line-height:1.3}
+
+/* Rest day */
+.rest-day{background:var(--surface);border-radius:10px;text-align:center;padding:20px;color:var(--muted)}
+.rest-day .icon{font-size:24px;margin-bottom:4px}
+.rest-day .label{font-size:13px;font-weight:600}
+.rest-day .sub{font-size:11px;margin-top:2px}
+
+/* Progression indicator */
+.prog-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.prog-dot.green{background:var(--green);box-shadow:0 0 6px rgba(74,222,128,0.5)}
+.prog-dot.grey{background:var(--border)}
+
+/* Add exercise button */
+.add-ex-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;margin-top:10px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s;width:100%}
+.add-ex-btn:active{background:var(--card);color:var(--text)}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);width:100%;max-width:600px;border-radius:16px 16px 0 0;max-height:85dvh;overflow-y:auto;padding:20px;animation:slideUp .2s ease-out}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal h2{font-size:17px;margin-bottom:4px}
+.modal .sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+.modal-close{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;background:var(--card);border:none;color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.form-group{margin-bottom:14px}
+.form-label{font-size:12px;color:var(--muted);margin-bottom:4px;display:block}
+.form-input{width:100%;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit}
+.form-input:focus{outline:none;border-color:var(--accent)}
+.form-select{width:100%;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.btn{width:100%;padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-primary{background:var(--accent);color:var(--bg)}
+.btn-secondary{background:var(--card);color:var(--text);margin-top:6px}
+.btn-danger{background:var(--red);color:var(--bg);margin-top:6px}
+.btn:active{opacity:.8}
+
+/* Swap chips */
+.swap-list{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.swap-chip{padding:6px 12px;border-radius:16px;background:var(--card);border:1px solid var(--border);font-size:12px;color:var(--text);cursor:pointer;transition:all .12s}
+.swap-chip:active,.swap-chip.selected{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--green);color:var(--bg);padding:10px 18px;border-radius:16px;font-size:13px;font-weight:600;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+
+/* Notes area */
+.notes-section{margin-top:8px}
+.notes-header{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:1px;cursor:pointer;padding:4px;user-select:none}
+.notes-header .notes-arrow{transition:transform .2s;font-size:10px}
+.notes-section.open .notes-arrow{transform:rotate(90deg)}
+.notes-textarea{width:100%;min-height:36px;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;line-height:1.4;display:none;transition:border-color .15s}
+.notes-textarea:focus{outline:none;border-color:var(--accent)}
+.notes-section.open .notes-textarea{display:block}
+.notes-textarea::placeholder{color:var(--muted);opacity:.6}
+.notes-badge{font-size:10px;background:var(--accent);color:var(--bg);padding:1px 6px;border-radius:8px;font-weight:700;display:none}
+
+/* Per-exercise notes */
+.ex-notes-toggle{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:rgba(255,255,255,0.05);color:var(--muted);font-size:11px;cursor:pointer;flex-shrink:0;transition:all .12s;border:none;font-family:inherit}
+.ex-notes-toggle:active,.ex-notes-toggle.has-note{background:rgba(168,139,250,0.12);color:var(--purple)}
+.ex-notes-row{display:none;border-bottom:1px solid rgba(71,85,105,0.3);background:rgba(30,41,59,0.5)}
+.ex-notes-row.open{display:flex}
+.ex-notes-textarea{width:100%;min-height:30px;padding:6px 12px;border:none;background:transparent;color:var(--text);font-size:11px;font-family:inherit;resize:vertical;line-height:1.4;outline:none}
+.ex-notes-textarea:focus{outline:none}
+.ex-notes-textarea::placeholder{color:var(--muted);opacity:.5}
+.notes-badge.show{display:inline}
+
+/* Sets toggle buttons */
+.sets-controls{display:flex;gap:4px;align-items:center}
+.sets-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1}
+.sets-btn:active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.sets-num{font-size:13px;font-weight:600;min-width:16px;text-align:center}
+
+/* Scroll-to-today floating button */
+.scroll-today{position:fixed;bottom:80px;right:16px;width:44px;height:44px;border-radius:50%;background:var(--accent);color:var(--bg);border:none;font-size:18px;cursor:pointer;box-shadow:0 4px 12px rgba(56,189,248,0.3);z-index:50;display:none;align-items:center;justify-content:center;transition:all .15s}
+.scroll-today.show{display:flex}
+.scroll-today:active{transform:scale(0.9)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="header">
+    <h1>🏋️ Billy's Workout</h1>
+    <p>3-Day Split · Upper / Lower / Arms & Delts</p>
+  </div>
+
+  <div class="toolbar">
+    <button class="install-btn hidden" id="install-btn" onclick="installApp()">📲 Install App</button>
+    <button class="tool-btn" onclick="exportCSV()">📥 CSV</button>
+  </div>
+  <div class="view-bar" id="view-bar">
+    <div class="view-toggle" id="view-toggle">
+      <button class="view-seg active" data-view="weekly" onclick="setViewMode('weekly')">📅 Weekly</button>
+      <button class="view-seg" data-view="monthly" onclick="setViewMode('monthly')">🗓 Monthly</button>
+    </div>
+    <div class="week-nav" id="week-nav">
+      <button class="tool-btn nav-btn" onclick="navWeek(-1)">◀ Week</button>
+      <button class="tool-btn nav-btn" onclick="navToday()">📍 Today</button>
+      <button class="tool-btn nav-btn" onclick="navWeek(1)">Week ▶</button>
+    </div>
+  </div>
+  <div class="mode-toggle">
+    <div class="mode-toggle-inner" id="mode-toggle">
+      <button class="mode-seg active" data-mode="gym" onclick="switchMode('gym')">🏋️ Gym</button>
+      <button class="mode-seg" data-mode="travel" onclick="switchMode('travel')">🎒 Travel</button>
+    </div>
+  </div>
+  <div class="ios-guide" id="ios-guide">
+    <span>📱 Tap Share</span> → <span>Add to Home Screen</span> to install
+  </div>
+
+  <div id="workout-container"></div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<button class="scroll-today" id="scroll-today-btn" onclick="scrollToToday()" title="Today">📅</button>
+
+<script>
+// ==========================================
+// DATA — Progression (unchanged from v26)
+// ==========================================
+const PROGRESSION = {
+  "Barbell Bench Press":{group:"Chest",range:"6-8",top:8,weight:"150",reps:10},
+  "Incline Barbell Press":{group:"Chest",range:"6-8",top:8,weight:"135",reps:7},
+  "UCV (Upper Chest Vertical)":{group:"Chest",range:"8-10",top:10,weight:"20",reps:0},
+  "Cable Fly":{group:"Chest",range:"10-12",top:12,weight:"30",reps:0},
+  "Lat Pulldown":{group:"Back",range:"8-10",top:10,weight:"200",reps:20},
+  "Seated Cable Row":{group:"Back",range:"8-10",top:10,weight:"175",reps:0},
+  "Pull-ups (Wide/Neutral)":{group:"Back",range:"8-10",top:10,weight:"BW",reps:6},
+  "Dumbbell Row":{group:"Back",range:"8-10",top:10,weight:"40",reps:0},
+  "Overhead Press":{group:"Shoulders",range:"6-8",top:8,weight:"40",reps:10},
+  "Seated Dumbbell Press":{group:"Shoulders",range:"6-8",top:8,weight:"40",reps:10},
+  "Lateral Raise (Y-palms up)":{group:"Shoulders",range:"10-12",top:12,weight:"15",reps:12},
+  "Face Pull":{group:"Shoulders",range:"12-15",top:15,weight:"35",reps:0},
+  "Barbell Curl":{group:"Biceps",range:"10-12",top:12,weight:"50",reps:15},
+  "Dumbbell Curl":{group:"Biceps",range:"10-12",top:12,weight:"25",reps:18},
+  "Incline Dumbbell Curl":{group:"Biceps",range:"8-10",top:10,weight:"30",reps:6},
+  "Cable Curl":{group:"Biceps",range:"10-12",top:12,weight:"40",reps:0},
+  "Dips":{group:"Triceps",range:"8-10",top:10,weight:"BW",reps:0},
+  "Skull Crushers":{group:"Triceps",range:"8-10",top:10,weight:"35",reps:0},
+  "Tricep Pushdown (rope)":{group:"Triceps",range:"10-12",top:12,weight:"80",reps:18},
+  "Cable/Bar Overhead Extension":{group:"Triceps",range:"10-12",top:12,weight:"50",reps:0},
+  "Barbell Back Squat":{group:"Quads",range:"6-8",top:8,weight:"105",reps:10},
+  "Front Squat":{group:"Quads",range:"6-8",top:8,weight:"115",reps:8},
+  "Leg Extension":{group:"Quads",range:"10-12",top:12,weight:"55",reps:0},
+  "Lunges":{group:"Quads",range:"10-12",top:12,weight:"20",reps:0},
+  "Romanian Deadlift":{group:"Hamstrings",range:"8-10",top:10,weight:"80",reps:15},
+  "Stiff Leg Deadlift":{group:"Hamstrings",range:"8-10",top:10,weight:"135",reps:10},
+  "Leg Curls":{group:"Hamstrings",range:"10-12",top:12,weight:"55",reps:0},
+  "Hip Thrust":{group:"Glutes",range:"8-10",top:10,weight:"150",reps:0},
+  "Cable Pull-through":{group:"Glutes",range:"10-12",top:12,weight:"110",reps:15},
+  "Bulgarian Split Squat":{group:"Glutes",range:"8-10",top:10,weight:"50",reps:10},
+  "1-Legged Glute Bridge":{group:"Glutes",range:"10-12",top:12,weight:"BW",reps:0},
+  "DB Lateral Raise":{group:"Deltoids",range:"12-15",top:15,weight:"17.5",reps:15},
+  "Reverse Fly":{group:"Deltoids",range:"12-15",top:15,weight:"20",reps:0},
+  "Barbell Shrug":{group:"Trapezius",range:"12-15",top:15,weight:"255",reps:15},
+  "Wrist Raises":{group:"Forearms",range:"15-20",top:20,weight:"12.5",reps:0},
+  "Wrist Curl":{group:"Forearms",range:"15-20",top:20,weight:"25",reps:14},
+  "Hanging Leg Raises":{group:"Core",range:"8-10",top:10,weight:"BW",reps:0},
+  "Modified Candlestick":{group:"Core",range:"8-10",top:10,weight:"BW",reps:0},
+  "Cable Crunch":{group:"Core",range:"10-12",top:12,weight:"140",reps:0},
+  "Standing Calf Raise":{group:"Calves",range:"12-15",top:15,weight:"205",reps:0},
+};
+
+const EX_BY_GROUP = {};
+for(const [name,data] of Object.entries(PROGRESSION)){
+  const g = data.group;
+  if(!EX_BY_GROUP[g]) EX_BY_GROUP[g]=[];
+  EX_BY_GROUP[g].push(name);
+}
+
+// Travel mode — resistance band & bodyweight exercises (unchanged)
+const TRAVEL_PROGRESSION = {
+  "Band Chest Press": {group:"Chest", range:"12-15", top:15, weight:"Medium"},
+  "Push-ups": {group:"Chest", range:"10-15", top:15, weight:"BW"},
+  "Band Row": {group:"Back", range:"12-15", top:15, weight:"Heavy"},
+  "Band Pull-apart": {group:"Back", range:"15-20", top:20, weight:"Light"},
+  "Band Shoulder Press": {group:"Shoulders", range:"12-15", top:15, weight:"Medium"},
+  "Band Lateral Raise": {group:"Shoulders", range:"15-20", top:20, weight:"Light"},
+  "Band Face Pull": {group:"Shoulders", range:"15-20", top:20, weight:"Light"},
+  "Band Bicep Curl": {group:"Biceps", range:"12-15", top:15, weight:"Medium"},
+  "Concentration Curl (band)": {group:"Biceps", range:"12-15", top:15, weight:"Light"},
+  "Band Tricep Pushdown": {group:"Triceps", range:"12-15", top:15, weight:"Medium"},
+  "Overhead Band Extension": {group:"Triceps", range:"12-15", top:15, weight:"Medium"},
+  "Tricep Kickback (band)": {group:"Triceps", range:"12-15", top:15, weight:"Light"},
+  "Band Squat": {group:"Quads", range:"15-20", top:20, weight:"Heavy"},
+  "Bodyweight Squat": {group:"Quads", range:"15-20", top:20, weight:"BW"},
+  "Reverse Lunges": {group:"Quads", range:"10-12", top:12, weight:"BW"},
+  "Band Deadlift": {group:"Hamstrings", range:"12-15", top:15, weight:"Heavy"},
+  "Band Good Morning": {group:"Hamstrings", range:"12-15", top:15, weight:"Medium"},
+  "Band Leg Curl": {group:"Hamstrings", range:"12-15", top:15, weight:"Medium"},
+  "Glute Bridge (band)": {group:"Glutes", range:"15-20", top:20, weight:"Heavy"},
+  "Band Hip Thrust": {group:"Glutes", range:"12-15", top:15, weight:"Heavy"},
+  "Donkey Kick (band)": {group:"Glutes", range:"15-20", top:20, weight:"Medium"},
+  "Standing Calf Raise (BW)": {group:"Calves", range:"15-20", top:20, weight:"BW"},
+  "Plank": {group:"Core", range:"30-60s", top:60, weight:"BW"},
+  "Lying Leg Raise": {group:"Core", range:"12-15", top:15, weight:"BW"},
+  "Russian Twist": {group:"Core", range:"15-20", top:20, weight:"BW"},
+  "Bicycle Crunch": {group:"Core", range:"15-20", top:20, weight:"BW"},
+  "Band Shrug": {group:"Trapezius", range:"15-20", top:20, weight:"Heavy"},
+  "Band Wrist Curl": {group:"Forearms", range:"15-20", top:20, weight:"Light"},
+  "Band Reverse Fly": {group:"Deltoids", range:"15-20", top:20, weight:"Light"},
+  "Band Lat Pulldown": {group:"Back", range:"12-15", top:15, weight:"Heavy"},
+  "Band Pallof Press": {group:"Core", range:"12-15", top:15, weight:"Medium"},
+  "Band Split Squat": {group:"Quads", range:"8-12", top:12, weight:"Heavy"},
+  "Single-Leg Deadlift (band)": {group:"Hamstrings", range:"8-10", top:10, weight:"Heavy"},
+  "Band Clamshell": {group:"Glutes", range:"15-20", top:20, weight:"Light"},
+  "Band Front Raise": {group:"Shoulders", range:"15-20", top:20, weight:"Light"},
+  "Seated Band Row": {group:"Back", range:"12-15", top:15, weight:"Heavy"},
+  "Band Leg Extension": {group:"Quads", range:"12-15", top:15, weight:"Medium"},
+  "Dead Bug": {group:"Core", range:"10-12", top:12, weight:"BW"},
+  "Hammer Curl (band)": {group:"Biceps", range:"12-15", top:15, weight:"Medium"},
+  "Band Woodchop": {group:"Core", range:"12-15", top:15, weight:"Medium"},
+  "Band Floor Press": {group:"Chest", range:"12-15", top:15, weight:"Medium"},
+  "Band Mountain Climber": {group:"Core", range:"30-45s", top:45, weight:"BW"},
+  "Band Upright Row": {group:"Shoulders", range:"12-15", top:15, weight:"Medium"},
+};
+
+const TRAVEL_EX_BY_GROUP = {};
+for(const [name,data] of Object.entries(TRAVEL_PROGRESSION)){
+  const g = data.group;
+  if(!TRAVEL_EX_BY_GROUP[g]) TRAVEL_EX_BY_GROUP[g]=[];
+  TRAVEL_EX_BY_GROUP[g].push(name);
+}
+
+// ==========================================
+// CONSTANTS
+// ==========================================
+const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const ROTATION_START = new Date(2026, 5, 8); // June 8, 2026 = Monday (Week 1 anchor)
+
+// ==========================================
+// WORKOUT TEMPLATES — 3-day split, A/B weeks, 7 days each
+// ==========================================
+const WORKOUT = {
+  gym: {
+    A: [
+      // Day 0 (Mon) — Upper A
+      {day:"Upper A", exercises:[
+        {muscle:"Chest",exercise:"Barbell Bench Press",sets:3},
+        {muscle:"Back",exercise:"Lat Pulldown",sets:3},
+        {muscle:"Shoulders",exercise:"Overhead Press",sets:3},
+        {muscle:"Biceps",exercise:"Barbell Curl",sets:3},
+        {muscle:"Triceps",exercise:"Tricep Pushdown (rope)",sets:3},
+        {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
+      ]},
+      // Day 1 (Tue) — Rest
+      {day:"Rest"},
+      // Day 2 (Wed) — Lower A
+      {day:"Lower A", exercises:[
+        {muscle:"Quads",exercise:"Barbell Back Squat",sets:3},
+        {muscle:"Hamstrings",exercise:"Romanian Deadlift",sets:3},
+        {muscle:"Glutes",exercise:"Hip Thrust",sets:3},
+        {muscle:"Quads",exercise:"Leg Extension",sets:3},
+        {muscle:"Calves",exercise:"Standing Calf Raise",sets:3},
+        {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
+      ]},
+      // Day 3 (Thu) — Rest
+      {day:"Rest"},
+      // Day 4 (Fri) — Arms & Delts A
+      {day:"Arms & Delts A", exercises:[
+        {muscle:"Biceps",exercise:"Barbell Curl",sets:3},
+        {muscle:"Triceps",exercise:"Skull Crushers",sets:3},
+        {muscle:"Deltoids",exercise:"DB Lateral Raise",sets:3},
+        {muscle:"Trapezius",exercise:"Barbell Shrug",sets:3},
+        {muscle:"Forearms",exercise:"Wrist Curl",sets:3},
+        {muscle:"Core",exercise:"Cable Crunch",sets:3},
+      ]},
+      // Day 5, 6 (Sat, Sun) — Rest
+      {day:"Rest"},
+      {day:"Rest"},
+    ],
+    B: [
+      // Day 0 (Mon) — Upper B
+      {day:"Upper B", exercises:[
+        {muscle:"Chest",exercise:"Incline Barbell Press",sets:3},
+        {muscle:"Back",exercise:"Seated Cable Row",sets:3},
+        {muscle:"Shoulders",exercise:"Seated Dumbbell Press",sets:3},
+        {muscle:"Biceps",exercise:"Dumbbell Curl",sets:3},
+        {muscle:"Triceps",exercise:"Cable/Bar Overhead Extension",sets:3},
+        {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
+      ]},
+      // Day 1 (Tue) — Rest
+      {day:"Rest"},
+      // Day 2 (Wed) — Lower B
+      {day:"Lower B", exercises:[
+        {muscle:"Quads",exercise:"Front Squat",sets:3},
+        {muscle:"Hamstrings",exercise:"Stiff Leg Deadlift",sets:3},
+        {muscle:"Glutes",exercise:"Bulgarian Split Squat",sets:3},
+        {muscle:"Hamstrings",exercise:"Leg Curls",sets:3},
+        {muscle:"Calves",exercise:"Standing Calf Raise",sets:3},
+        {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
+      ]},
+      // Day 3 (Thu) — Rest
+      {day:"Rest"},
+      // Day 4 (Fri) — Arms & Delts B
+      {day:"Arms & Delts B", exercises:[
+        {muscle:"Biceps",exercise:"Dumbbell Curl",sets:3},
+        {muscle:"Triceps",exercise:"Tricep Pushdown (rope)",sets:3},
+        {muscle:"Deltoids",exercise:"DB Lateral Raise",sets:3},
+        {muscle:"Trapezius",exercise:"Barbell Shrug",sets:3},
+        {muscle:"Forearms",exercise:"Wrist Raises",sets:3},
+        {muscle:"Core",exercise:"Hanging Leg Raises",sets:3},
+      ]},
+      // Day 5, 6 — Rest
+      {day:"Rest"},
+      {day:"Rest"},
+    ]
+  },
+  travel: {
+    A: [
+      // Day 0 (Mon) — Upper Travel A
+      {day:"Upper Travel A", exercises:[
+        {muscle:"Chest",exercise:"Band Chest Press",sets:3},
+        {muscle:"Back",exercise:"Band Lat Pulldown",sets:3},
+        {muscle:"Shoulders",exercise:"Band Shoulder Press",sets:3},
+        {muscle:"Biceps",exercise:"Band Bicep Curl",sets:3},
+        {muscle:"Triceps",exercise:"Band Tricep Pushdown",sets:3},
+        {muscle:"Core",exercise:"Plank",sets:3},
+      ]},
+      // Day 1 — Rest
+      {day:"Rest"},
+      // Day 2 (Wed) — Lower Travel A
+      {day:"Lower Travel A", exercises:[
+        {muscle:"Quads",exercise:"Band Squat",sets:3},
+        {muscle:"Hamstrings",exercise:"Band Deadlift",sets:3},
+        {muscle:"Glutes",exercise:"Glute Bridge (band)",sets:3},
+        {muscle:"Quads",exercise:"Band Leg Extension",sets:3},
+        {muscle:"Calves",exercise:"Standing Calf Raise (BW)",sets:3},
+        {muscle:"Core",exercise:"Lying Leg Raise",sets:3},
+      ]},
+      // Day 3 — Rest
+      {day:"Rest"},
+      // Day 4 (Fri) — Arms/Bands/Core A
+      {day:"Arms/Bands/Core A", exercises:[
+        {muscle:"Biceps",exercise:"Band Bicep Curl",sets:3},
+        {muscle:"Triceps",exercise:"Overhead Band Extension",sets:3},
+        {muscle:"Shoulders",exercise:"Band Lateral Raise",sets:3},
+        {muscle:"Trapezius",exercise:"Band Shrug",sets:3},
+        {muscle:"Forearms",exercise:"Band Wrist Curl",sets:3},
+        {muscle:"Core",exercise:"Band Pallof Press",sets:3},
+      ]},
+      // Day 5, 6 — Rest
+      {day:"Rest"},
+      {day:"Rest"},
+    ],
+    B: [
+      // Day 0 (Mon) — Upper Travel B
+      {day:"Upper Travel B", exercises:[
+        {muscle:"Chest",exercise:"Push-ups",sets:3},
+        {muscle:"Back",exercise:"Band Row",sets:3},
+        {muscle:"Shoulders",exercise:"Band Face Pull",sets:3},
+        {muscle:"Biceps",exercise:"Concentration Curl (band)",sets:3},
+        {muscle:"Triceps",exercise:"Tricep Kickback (band)",sets:3},
+        {muscle:"Core",exercise:"Bicycle Crunch",sets:3},
+      ]},
+      // Day 1 — Rest
+      {day:"Rest"},
+      // Day 2 (Wed) — Lower Travel B
+      {day:"Lower Travel B", exercises:[
+        {muscle:"Quads",exercise:"Bodyweight Squat",sets:3},
+        {muscle:"Hamstrings",exercise:"Band Good Morning",sets:3},
+        {muscle:"Glutes",exercise:"Band Hip Thrust",sets:3},
+        {muscle:"Hamstrings",exercise:"Band Leg Curl",sets:3},
+        {muscle:"Calves",exercise:"Standing Calf Raise (BW)",sets:3},
+        {muscle:"Core",exercise:"Russian Twist",sets:3},
+      ]},
+      // Day 3 — Rest
+      {day:"Rest"},
+      // Day 4 (Fri) — Arms/Bands/Core B
+      {day:"Arms/Bands/Core B", exercises:[
+        {muscle:"Biceps",exercise:"Hammer Curl (band)",sets:3},
+        {muscle:"Triceps",exercise:"Band Tricep Pushdown",sets:3},
+        {muscle:"Shoulders",exercise:"Band Face Pull",sets:3},
+        {muscle:"Trapezius",exercise:"Band Shrug",sets:3},
+        {muscle:"Forearms",exercise:"Band Wrist Curl",sets:3},
+        {muscle:"Core",exercise:"Plank",sets:3},
+      ]},
+      // Day 5, 6 — Rest
+      {day:"Rest"},
+      {day:"Rest"},
+    ]
+  }
+};
+
+// ==========================================
+// STATE (week-based: sessionLog[weekIndex][dayOfWeek][exIdx])
+// ==========================================
+let workoutMode = 'gym';
+let sessionLog = {};
+let dayNotes = {};
+let dayDates = {};
+let exerciseNotes = {};
+let archivedWeeks = {};
+let travelSessionLog = {};
+let travelDayNotes = {};
+let travelDayDates = {};
+let travelExerciseNotes = {};
+
+// View state
+window._viewState = { mode: 'weekly', week: 0 };
+
+// ==========================================
+// CORE LOGIC — Week calculation
+// ==========================================
+function getWeekIndex(date) {
+  const diffDays = Math.floor((date - ROTATION_START) / (1000 * 60 * 60 * 24));
+  return Math.floor(diffDays / 7);
+}
+
+function getWeekParity(weekIndex) {
+  // weekIndex 0 = Week 1 (odd) = A; weekIndex 1 = Week 2 (even) = B
+  return (weekIndex % 2 === 0) ? 'A' : 'B';
+}
+
+function getTodayInfo() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekIndex = getWeekIndex(today);
+  const dayOfWeek = (today.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  return { weekIndex, dayOfWeek, parity: getWeekParity(weekIndex) };
+}
+
+function getMondayOfWeek(weekIndex) {
+  const ms = ROTATION_START.getTime() + weekIndex * 7 * 24 * 60 * 60 * 1000;
+  return new Date(ms);
+}
+
+function getTodayDateStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// ==========================================
+// MODE-AWARE ACCESSORS
+// ==========================================
+function getSessionLog() { return workoutMode === 'travel' ? travelSessionLog : sessionLog; }
+function getDayNotes() { return workoutMode === 'travel' ? travelDayNotes : dayNotes; }
+function getDayDates() { return workoutMode === 'travel' ? travelDayDates : dayDates; }
+function getExerciseNotes() { return workoutMode === 'travel' ? travelExerciseNotes : exerciseNotes; }
+function getProgression() { return workoutMode === 'travel' ? TRAVEL_PROGRESSION : PROGRESSION; }
+function getExByGroup() { return workoutMode === 'travel' ? TRAVEL_EX_BY_GROUP : EX_BY_GROUP; }
+function getArchived() { return archivedWeeks; }
+
+// Get the workout template for a given week and day
+function getWorkoutDay(weekIndex, dayOfWeek) {
+  const parity = getWeekParity(weekIndex);
+  return WORKOUT[workoutMode][parity][dayOfWeek];
+}
+
+// ==========================================
+// SESSION ACCESS (weekIndex + dayOfWeek)
+// ==========================================
+function getSession(weekIndex, dayOfWeek, exIdx) {
+  const log = getSessionLog();
+  const w = log[weekIndex] = log[weekIndex] || {};
+  const d = w[dayOfWeek] = w[dayOfWeek] || {};
+  const e = d[exIdx] = d[exIdx] || {};
+  if (!e.reps) e.reps = [];
+  return e;
+}
+
+function getWeight(name, weekIndex, dayOfWeek, exIdx) {
+  const sess = getSession(weekIndex, dayOfWeek, exIdx);
+  if (sess.weight) return sess.weight;
+  const prog = getProgression()[name];
+  if (!prog) return '';
+  if (workoutMode === 'gym' && prog.reps >= prog.top && prog.top > 0 && prog.weight !== 'BW') {
+    return String(parseFloat(prog.weight) + 5);
+  }
+  return prog.weight;
+}
+
+function setWeight(name, weekIndex, dayOfWeek, exIdx, val) {
+  const sess = getSession(weekIndex, dayOfWeek, exIdx);
+  sess.weight = val;
+  const prog = getProgression()[name];
+  if (prog && val) {
+    prog.weight = val;
+  }
+}
+
+function isDone(weekIndex, dayOfWeek, exIdx) {
+  return getSession(weekIndex, dayOfWeek, exIdx).done || false;
+}
+
+function toggleDone(weekIndex, dayOfWeek, exIdx) {
+  const sess = getSession(weekIndex, dayOfWeek, exIdx);
+  sess.done = !sess.done;
+  saveState();
+}
+
+function isBumped(name, weekIndex, dayOfWeek, exIdx) {
+  if (workoutMode === 'travel') return false;
+  const w = getWeight(name, weekIndex, dayOfWeek, exIdx);
+  const prog = getProgression()[name];
+  if (!prog || prog.weight === 'BW') return false;
+  return String(parseFloat(prog.weight) + 5) === String(w);
+}
+
+function muscleColor(group) {
+  const map = {
+    Chest:'#f87171',Back:'#60a5fa',Shoulders:'#fbbf24',Biceps:'#a78bfa',
+    Triceps:'#fb923c',Quads:'#4ade80',Hamstrings:'#34d399',Glutes:'#f472b6',
+    Core:'#38bdf8',Calves:'#94a3b8',Deltoids:'#facc15',Trapezius:'#c084fc',
+    Forearms:'#fda4af',
+  };
+  return map[group] || '#475569';
+}
+
+// ==========================================
+// PREVIOUS STATS
+// ==========================================
+function getPreviousStats(exerciseName, currentWeek, currentDay, currentExIdx) {
+  const entries = [];
+  const log = getSessionLog();
+
+  Object.keys(log).forEach(wi => {
+    const w = log[wi];
+    if (!w) return;
+    Object.keys(w).forEach(dow => {
+      const day = w[dow];
+      if (!day) return;
+      Object.keys(day).forEach(eIdx => {
+        const sess = day[eIdx];
+        const wd = getWorkoutDay(parseInt(wi), parseInt(dow));
+        if (!wd || !wd.exercises) return;
+        const ex = wd.exercises[parseInt(eIdx)];
+        if (ex && ex.exercise === exerciseName) {
+          entries.push({
+            weekIndex: parseInt(wi),
+            dayOfWeek: parseInt(dow),
+            exIdx: parseInt(eIdx),
+            weight: sess.weight,
+            reps: sess.reps || [],
+          });
+        }
+      });
+    });
+  });
+
+  // Sort by canonical order: weekIndex * 7 + dayOfWeek, most recent first
+  entries.sort((a, b) => (b.weekIndex * 7 + b.dayOfWeek) - (a.weekIndex * 7 + a.dayOfWeek));
+  const best = entries.find(e =>
+    !(e.weekIndex === currentWeek && e.dayOfWeek === currentDay && e.exIdx === currentExIdx)
+  );
+
+  if (!best || !best.weight) return null;
+  return best;
+}
+
+// ==========================================
+// PERSISTENCE with migration
+// ==========================================
+function toggleArchive(weekIndex) {
+  archivedWeeks[weekIndex] = !archivedWeeks[weekIndex];
+  saveState();
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('caprica_workout_v2');
+    if (raw) {
+      try { localStorage.setItem('caprica_workout_v2_backup', raw); } catch (e) { }
+      const data = JSON.parse(raw);
+      if (data.progression) Object.assign(PROGRESSION, data.progression);
+      if (data.travelProgression) Object.assign(TRAVEL_PROGRESSION, data.travelProgression);
+
+      if (data.workoutMode) workoutMode = data.workoutMode;
+      if (data.travelSessionLog) travelSessionLog = data.travelSessionLog;
+      if (data.travelDayNotes) travelDayNotes = data.travelDayNotes;
+      if (data.travelDayDates) travelDayDates = data.travelDayDates;
+      if (data.travelExerciseNotes) travelExerciseNotes = data.travelExerciseNotes;
+
+      const schemaVersion = data._schemaVersion || 0;
+
+      if (schemaVersion < 2) {
+        // Very old format — already migrated by v26, but just in case
+        console.log('🧹 Migrating old format (schema < 2)...');
+        sessionLog = data.sessionLog || {};
+        dayNotes = data.dayNotes || {};
+        dayDates = data.dayDates || {};
+        exerciseNotes = data.exerciseNotes || {};
+        archivedWeeks = data.archivedCycles || {}; // repurpose
+      } else if (schemaVersion < 3) {
+        // v2 format: cycle+flatDay → migrate to weekIndex+dayOfWeek
+        console.log('🧹 Migrating v2 (cycle+flatDay) → v3 (week+dayOfWeek)...');
+        migrateV2ToV3(data);
+      } else {
+        // v3+ format — load directly
+        sessionLog = data.sessionLog || {};
+        dayNotes = data.dayNotes || {};
+        dayDates = data.dayDates || {};
+        exerciseNotes = data.exerciseNotes || {};
+        archivedWeeks = data.archivedWeeks || {};
+      }
+    }
+  } catch (e) {
+    console.error('Load error:', e);
+  }
+
+  // Initialize view state
+  const todayInfo = getTodayInfo();
+  window._viewState.week = todayInfo.weekIndex;
+}
+
+function migrateV2ToV3(data) {
+  const oldLog = data.sessionLog || {};
+  const oldNotes = data.dayNotes || {};
+  const oldDates = data.dayDates || {};
+  const oldExNotes = data.exerciseNotes || {};
+
+  const newLog = {};
+  const newNotes = {};
+  const newDates = {};
+  const newExNotes = {};
+  const newArchived = {};
+
+  // Determine old format: keys like "0" with "0"-"13" sub-keys → cycle+flatDay
+  const isCycleBased = Object.keys(oldLog).some(k => {
+    const c = oldLog[k];
+    return c && typeof c === 'object' && Object.keys(c).some(fd => parseInt(fd) >= 0 && parseInt(fd) <= 13);
+  });
+
+  if (isCycleBased) {
+    // Old: cycle → flatDay (0-13). Map to weekIndex+dayOfWeek.
+    // ROTATION_START = June 8 2026 = Monday = cycle 0, flatDay 0
+    // flatDay 0-13 in cycle C → absolute day = C * 14 + flatDay
+    // weekIndex = floor(absDay / 7), dayOfWeek = absDay % 7
+    Object.keys(oldLog).forEach(cycleStr => {
+      const cycle = parseInt(cycleStr);
+      const c = oldLog[cycleStr];
+      if (!c || typeof c !== 'object') return;
+      Object.keys(c).forEach(flatStr => {
+        const flatDay = parseInt(flatStr);
+        const absDay = cycle * 14 + flatDay;
+        const weekIndex = Math.floor(absDay / 7);
+        const dayOfWeek = absDay % 7;
+        if (!newLog[weekIndex]) newLog[weekIndex] = {};
+        newLog[weekIndex][dayOfWeek] = c[flatStr];
+      });
+    });
+
+    // Migrate dayNotes
+    Object.keys(oldNotes).forEach(cycleStr => {
+      const cycle = parseInt(cycleStr);
+      const cn = oldNotes[cycleStr];
+      if (!cn || typeof cn !== 'object') return;
+      Object.keys(cn).forEach(flatStr => {
+        const flatDay = parseInt(flatStr);
+        const absDay = cycle * 14 + flatDay;
+        const weekIndex = Math.floor(absDay / 7);
+        const dayOfWeek = absDay % 7;
+        if (!newNotes[weekIndex]) newNotes[weekIndex] = {};
+        newNotes[weekIndex][dayOfWeek] = cn[flatStr];
+      });
+    });
+
+    // Migrate dayDates
+    Object.keys(oldDates).forEach(cycleStr => {
+      const cycle = parseInt(cycleStr);
+      const cd = oldDates[cycleStr];
+      if (!cd || typeof cd !== 'object') return;
+      Object.keys(cd).forEach(flatStr => {
+        const flatDay = parseInt(flatStr);
+        const absDay = cycle * 14 + flatDay;
+        const weekIndex = Math.floor(absDay / 7);
+        const dayOfWeek = absDay % 7;
+        if (!newDates[weekIndex]) newDates[weekIndex] = {};
+        newDates[weekIndex][dayOfWeek] = cd[flatStr];
+      });
+    });
+
+    // Migrate exerciseNotes
+    Object.keys(oldExNotes).forEach(cycleStr => {
+      const cycle = parseInt(cycleStr);
+      const cen = oldExNotes[cycleStr];
+      if (!cen || typeof cen !== 'object') return;
+      Object.keys(cen).forEach(flatStr => {
+        const flatDay = parseInt(flatStr);
+        const absDay = cycle * 14 + flatDay;
+        const weekIndex = Math.floor(absDay / 7);
+        const dayOfWeek = absDay % 7;
+        if (!newExNotes[weekIndex]) newExNotes[weekIndex] = {};
+        newExNotes[weekIndex][dayOfWeek] = cen[flatStr];
+      });
+    });
+
+    // Convert archivedCycles → archivedWeeks
+    if (data.archivedCycles) {
+      const seenWeeks = new Set();
+      Object.keys(data.archivedCycles).forEach(cycleStr => {
+        const cycle = parseInt(cycleStr);
+        for (let fd = 0; fd < 14; fd++) {
+          const absDay = cycle * 14 + fd;
+          const wi = Math.floor(absDay / 7);
+          seenWeeks.add(wi);
+        }
+      });
+      seenWeeks.forEach(wi => { newArchived[wi] = true; });
+    }
+
+    sessionLog = newLog;
+    dayNotes = newNotes;
+    dayDates = newDates;
+    exerciseNotes = newExNotes;
+    archivedWeeks = newArchived;
+    saveState(); // Save migrated data immediately
+    console.log('✅ Migration v2→v3 complete.');
+  } else {
+    // Already in week-based format but marked as schema < 3 (shouldn't happen, but handle)
+    sessionLog = oldLog;
+    dayNotes = oldNotes;
+    dayDates = oldDates;
+    exerciseNotes = oldExNotes;
+    archivedWeeks = data.archivedWeeks || data.archivedCycles || {};
+  }
+}
+
+function saveState() {
+  localStorage.setItem('caprica_workout_v2', JSON.stringify({
+    _schemaVersion: 3,
+    workoutMode: workoutMode,
+    progression: PROGRESSION,
+    travelProgression: TRAVEL_PROGRESSION,
+    sessionLog: sessionLog,
+    dayNotes: dayNotes,
+    dayDates: dayDates,
+    exerciseNotes: exerciseNotes,
+    archivedWeeks: archivedWeeks,
+    travelSessionLog: travelSessionLog,
+    travelDayNotes: travelDayNotes,
+    travelDayDates: travelDayDates,
+    travelExerciseNotes: travelExerciseNotes,
+  }));
+}
+
+// ==========================================
+// VIEW NAVIGATION
+// ==========================================
+function setViewMode(mode) {
+  window._viewState.mode = mode;
+  updateNavLabels();
+  render();
+  document.querySelectorAll('.view-seg').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === mode);
+  });
+}
+
+function navWeek(delta) {
+  if (window._viewState.mode === 'monthly') {
+    // Navigate by ~4 weeks at a time (month-ish)
+    window._viewState.week += delta * 4;
+  } else {
+    window._viewState.week += delta;
+  }
+  updateNavLabels();
+  render();
+}
+
+function navToday() {
+  window._viewState.week = getTodayInfo().weekIndex;
+  window._viewState.mode = 'weekly';
+  document.querySelectorAll('.view-seg').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === 'weekly');
+  });
+  updateNavLabels();
+  render();
+  setTimeout(() => scrollToToday(), 200);
+}
+
+function updateNavLabels() {
+  const navBtns = document.querySelectorAll('#week-nav .nav-btn');
+  if (navBtns.length >= 3) {
+    const unit = window._viewState.mode === 'monthly' ? 'Month' : 'Week';
+    navBtns[0].textContent = '◀ ' + unit;
+    navBtns[2].textContent = unit + ' ▶';
+  }
+}
+
+// ==========================================
+// RENDER — Main entry point
+// ==========================================
+function render() {
+  const scrollY = window.scrollY;
+  const viewState = window._viewState;
+  const headerP = document.querySelector('.header p');
+  if (headerP) {
+    headerP.textContent = workoutMode === 'travel'
+      ? '3-Day Split · Upper / Lower / Arms & Bands'
+      : '3-Day Split · Upper / Lower / Arms & Delts';
+  }
+
+  // Update navigation labels
+  updateNavLabels();
+
+  const container = document.getElementById('workout-container');
+
+  let html = '';
+  if (viewState.mode === 'monthly') {
+    html = renderMonth(viewState.week);
+  } else {
+    html = renderWeek(viewState.week);
+  }
+
+  container.innerHTML = html;
+
+  // Version marker
+  container.innerHTML += '<div style="text-align:center;padding:20px 20px 60px;font-size:9px;color:var(--muted);opacity:0.35">v27 · 3-Day Split · Week A/B · <a href="https://workout-tracker-app-403.netlify.app" style="color:var(--muted);text-decoration:none">Billy\'s Workout</a></div>';
+
+  window.scrollTo(0, scrollY);
+
+  // Auto-scroll to today on first render
+  if (!render._didInitialScroll) {
+    render._didInitialScroll = true;
+    const todayInfo = getTodayInfo();
+    const todayEl = document.getElementById('day-' + todayInfo.weekIndex + '-' + todayInfo.dayOfWeek);
+    if (todayEl) {
+      setTimeout(() => {
+        todayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }
+
+  updateScrollTodayBtn();
+}
+
+// ==========================================
+// RENDER — Weekly view
+// ==========================================
+function renderWeek(weekIndex) {
+  const parity = getWeekParity(weekIndex);
+  const todayInfo = getTodayInfo();
+  const isThisWeek = (weekIndex === todayInfo.weekIndex);
+  const monday = getMondayOfWeek(weekIndex);
+  const weekLabel = 'Week of ' + monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const weekNum = weekIndex + 1; // Human-readable week number (1-based)
+  const isArchived = archivedWeeks[weekIndex];
+  const dd = getDayDates();
+  const dn = getDayNotes();
+  const sl = getSessionLog();
+
+  let html = '';
+
+  // Week header with archive button
+  html += '<div class="week-header">';
+  html += '<div class="week-badge">📅 ' + weekLabel + ' <span class="parity">· Week ' + weekNum + ' (' + parity + ')</span></div>';
+  html += '<button class="archive-btn" onclick="toggleArchive(' + weekIndex + ');render()" title="' + (isArchived ? 'Restore week' : 'Archive week') + '">';
+  html += isArchived ? '📂 Restore' : '📁 Archive';
+  html += '</button>';
+  html += '</div>';
+
+  if (isArchived) {
+    html += '<div class="archived-banner" onclick="toggleArchive(' + weekIndex + ');render()" style="cursor:pointer">📦 Week archived — tap to restore</div>';
+    return html;
+  }
+
+  for (let dow = 0; dow < 7; dow++) {
+    const day = getWorkoutDay(weekIndex, dow);
+    const blockId = 'day-' + weekIndex + '-' + dow;
+    const isToday = isThisWeek && (dow === todayInfo.dayOfWeek);
+    const dayDate = (dd[weekIndex] && dd[weekIndex][dow]) || '';
+    const dayName = DAY_NAMES[dow];
+
+    if (day.day === 'Rest') {
+      html += '<div class="rest-day" id="' + blockId + '"' + (isToday ? ' style="border:1px solid var(--green)"' : '') + '>';
+      html += '<div class="icon">😴</div>';
+      html += '<div class="label">' + dayName + ' — Rest Day</div>';
+      html += '<div class="sub">Recover. Eat. Sleep.</div>';
+      html += '<div style="margin-top:8px;font-size:11px;color:var(--muted)">';
+      html += '<input type="date" class="day-date" value="' + dayDate + '"';
+      html += ' data-week="' + weekIndex + '" data-day="' + dow + '"';
+      html += ' onchange="onDateChange(this,' + weekIndex + ',' + dow + ')"';
+      html += ' style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--muted);font-family:inherit;font-size:11px;max-width:130px">';
+      html += '</div></div>';
+      continue;
+    }
+
+    const totalEx = day.exercises.length;
+    html += '<div class="day-block" id="' + blockId + '">';
+    html += '<div class="day-label">';
+    html += '<span>' + dayName + ' — ' + day.day + '</span>';
+    html += '<div class="day-date-wrapper">';
+    html += '<input type="date" class="day-date' + (isToday ? ' today' : '') + '"';
+    html += ' value="' + dayDate + '" placeholder="' + (isToday ? getTodayDateStr() : 'Set date') + '"';
+    html += ' data-week="' + weekIndex + '" data-day="' + dow + '"';
+    html += ' onchange="onDateChange(this,' + weekIndex + ',' + dow + ')"';
+    html += ' title="' + (isToday ? 'Today' : 'Set date') + '">';
+    html += '<span class="day-count">' + totalEx + ' exercises</span>';
+    html += '</div></div>';
+
+    html += '<div class="sheet">';
+    html += '<div class="sheet-header">';
+    html += '<div class="col col-exercise">EXERCISE</div>';
+    html += '<div class="col col-weight">WT</div>';
+
+    const maxSets = Math.max(...day.exercises.map(e => e.sets), 2);
+    for (let s = 1; s <= maxSets; s++) {
+      html += '<div class="col col-set">S' + s + '</div>';
+    }
+    html += '<div class="col col-check">✓</div><div class="col col-notes"></div></div>';
+
+    day.exercises.forEach((ex, exIdx) => {
+      const prog = getProgression()[ex.exercise];
+      const w = getWeight(ex.exercise, weekIndex, dow, exIdx);
+      const done = isDone(weekIndex, dow, exIdx);
+      const bumped = isBumped(ex.exercise, weekIndex, dow, exIdx);
+      const color = muscleColor(ex.muscle);
+      const prev = getPreviousStats(ex.exercise, weekIndex, dow, exIdx);
+      const en = getExerciseNotes();
+      const enote = (en[weekIndex] && en[weekIndex][dow] && en[weekIndex][dow][exIdx]) || '';
+
+      let prevWeightHint = '';
+      if (prev && prev.weight) {
+        prevWeightHint = '<span class="prev-hint">' + prev.weight + '</span>';
+      }
+
+      html += '<div class="ex-row' + (done ? ' completed' : '') + '">';
+      html += '<div class="col col-exercise">';
+      html += '<div class="ex-cell" onclick="openExerciseModal(' + weekIndex + ',' + dow + ',' + exIdx + ')">';
+      html += '<div class="ex-main">';
+      html += '<div class="ex-color-dot" style="background:' + color + '"></div>';
+      html += '<div class="ex-name-text">' + ex.exercise + '</div>';
+      html += '<a class="vid-link" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(ex.exercise.replace(/'/g, '') + ' form tutorial') + '" target="_blank" onclick="event.stopPropagation()" title="Form video">▶</a>';
+      html += '</div>';
+      html += '<div class="ex-sets-label">' + (prog ? prog.range : '') + ' · ' + ex.sets + ' sets</div>';
+      html += '</div></div>';
+
+      html += '<div class="col col-weight"><div class="cell">';
+      html += '<span class="weight-val' + (bumped ? ' bumped' : '') + '" contenteditable="true"';
+      html += ' inputmode="decimal" data-week="' + weekIndex + '" data-day="' + dow + '" data-ex="' + exIdx + '"';
+      html += ' onfocus="this.dataset.prev=this.textContent"';
+      html += ' onblur="onWeightBlur(this,' + weekIndex + ',' + dow + ',' + exIdx + ',\'' + ex.exercise.replace(/'/g, "\\'") + '\')"';
+      html += ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"';
+      html += '>' + (w || '—') + '</span>';
+      html += prevWeightHint;
+      html += '</div></div>';
+
+      for (let s = 0; s < ex.sets; s++) {
+        const repVal = (getSession(weekIndex, dow, exIdx).reps[s] !== undefined) ? getSession(weekIndex, dow, exIdx).reps[s] : '';
+        const metClass = (repVal !== '' && prog && prog.top > 0 && Number(repVal) >= prog.top) ? ' met' : '';
+        const filledClass = repVal !== '' ? ' filled' : '';
+        const prevRep = (prev && prev.reps && prev.reps[s] !== undefined) ? prev.reps[s] : null;
+        const prevRepHint = prevRep !== null ? '<span class="prev-hint">' + prevRep + '</span>' : '';
+        html += '<div class="col col-set"><div class="cell">';
+        html += '<input class="rep-input' + filledClass + metClass + '" type="number" min="0" max="50"';
+        html += ' value="' + repVal + '" placeholder="—"';
+        html += ' data-week="' + weekIndex + '" data-day="' + dow + '" data-ex="' + exIdx + '" data-set="' + s + '"';
+        html += ' onchange="onRepChange(this,' + weekIndex + ',' + dow + ',' + exIdx + ',' + s + ')"';
+        html += ' onfocus="this.select()" inputmode="numeric">';
+        html += prevRepHint;
+        html += '</div></div>';
+      }
+
+      html += '<div class="col col-check"><div class="cell">';
+      html += '<span class="check-cell' + (done ? ' done' : '') + '" onclick="toggleDone(' + weekIndex + ',' + dow + ',' + exIdx + ');render()">';
+      html += (done ? '✓' : '○') + '</span>';
+      html += '</div></div>';
+
+      html += '<div class="col col-notes"><div class="cell">';
+      html += '<button class="ex-notes-toggle' + (enote ? ' has-note' : '') + '" onclick="toggleExNotes(' + weekIndex + ',' + dow + ',' + exIdx + ')" title="' + (enote ? 'Exercise notes saved' : 'Add exercise note') + '">📝</button>';
+      html += '</div></div>';
+      html += '</div>'; // ex-row
+
+      // Exercise notes row
+      const enoteOpen = enote ? ' open' : '';
+      html += '<div class="ex-notes-row' + enoteOpen + '" id="ex-notes-row-' + weekIndex + '-' + dow + '-' + exIdx + '">';
+      html += '<textarea class="ex-notes-textarea" id="ex-notes-area-' + weekIndex + '-' + dow + '-' + exIdx + '"';
+      html += ' placeholder="Notes for ' + ex.exercise.replace(/'/g, "\\'") + '..."';
+      html += ' onblur="saveExNotes(' + weekIndex + ',' + dow + ',' + exIdx + ')"';
+      html += ' oninput="autoResizeExNotes(this)">' + enote + '</textarea>';
+      html += '</div>';
+    });
+
+    html += '</div>'; // sheet
+
+    // Day notes
+    const hasNotes = dn[weekIndex] && dn[weekIndex][dow] && dn[weekIndex][dow].trim();
+    const notesKey = weekIndex + '-' + dow;
+    html += '<div class="notes-section' + (hasNotes ? ' open' : '') + '" id="notes-' + notesKey + '">';
+    html += '<div class="notes-header" onclick="toggleNotes(' + weekIndex + ',' + dow + ')">';
+    html += '<span class="notes-arrow">▶</span> Notes';
+    html += '<span class="notes-badge' + (hasNotes ? ' show' : '') + '" id="notes-badge-' + notesKey + '">✓</span>';
+    html += '</div>';
+    html += '<textarea class="notes-textarea" id="notes-area-' + notesKey + '"';
+    html += ' placeholder="How\'d it go? Weight feel good? Anything hurt?"';
+    html += ' onblur="saveNotes(' + weekIndex + ',' + dow + ')"';
+    html += ' oninput="autoResizeNotes(this)">' + ((dn[weekIndex] && dn[weekIndex][dow]) || '') + '</textarea>';
+    html += '</div>';
+
+    html += '<button class="add-ex-btn" onclick="openAddExercise(' + weekIndex + ',' + dow + ')">+ Add Exercise</button>';
+    html += '</div>'; // day-block
+  }
+
+  return html;
+}
+
+// ==========================================
+// RENDER — Monthly view
+// ==========================================
+function renderMonth(centerWeek) {
+  // Find the first Monday that starts the month containing centerWeek
+  const centerMonday = getMondayOfWeek(centerWeek);
+  const monthStart = new Date(centerMonday.getFullYear(), centerMonday.getMonth(), 1);
+  // Find week containing the 1st of the month
+  const firstWeekIndex = getWeekIndex(monthStart);
+  // Find the last day of the month
+  const monthEnd = new Date(centerMonday.getFullYear(), centerMonday.getMonth() + 1, 0);
+  const lastWeekIndex = getWeekIndex(monthEnd);
+
+  const monthLabel = centerMonday.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const todayInfo = getTodayInfo();
+  const dd = getDayDates();
+  const sl = getSessionLog();
+
+  let html = '';
+  html += '<div class="week-header">';
+  html += '<div class="week-badge">🗓 ' + monthLabel + '</div>';
+  html += '</div>';
+
+  html += '<div class="month-grid">';
+
+  // Day-of-week header row
+  html += '<div class="month-week-row">';
+  for (let d = 0; d < 7; d++) {
+    html += '<div class="month-day" style="font-size:9px;font-weight:700;color:var(--muted);cursor:default;min-height:auto;padding:4px;">' + DAY_SHORT[d] + '</div>';
+  }
+  html += '</div>';
+
+  for (let wi = firstWeekIndex; wi <= lastWeekIndex; wi++) {
+    html += '<div class="month-week-row">';
+    for (let dow = 0; dow < 7; dow++) {
+      const monday = getMondayOfWeek(wi);
+      const dayDate = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + dow);
+      const dayNum = dayDate.getDate();
+      const isToday = wi === todayInfo.weekIndex && dow === todayInfo.dayOfWeek;
+      const isInMonth = dayDate.getMonth() === centerMonday.getMonth();
+      const day = getWorkoutDay(wi, dow);
+      const isWorkout = day.day !== 'Rest';
+
+      let cellClass = 'month-day';
+      if (!isWorkout) cellClass += ' rest';
+      if (isToday) cellClass += ' today';
+      if (!isInMonth) cellClass += ' rest';
+
+      const clickAction = isInMonth
+        ? 'onclick="setViewMode(\'weekly\');window._viewState.week=' + wi + ';render();setTimeout(function(){var el=document.getElementById(\'day-' + wi + '-' + dow + '\');if(el)el.scrollIntoView({behavior:\'smooth\',block:\'start\'})},150)"'
+        : '';
+
+      html += '<div class="' + cellClass + '" ' + clickAction + '>';
+      html += '<span class="md-num">' + dayNum + '</span>';
+      if (isWorkout && isInMonth) {
+        html += '<span class="md-name">' + DAY_NAMES[dow] + '</span>';
+        const dayData = (sl[wi] && sl[wi][dow]) ? Object.keys(sl[wi][dow]).length : 0;
+        const exCount = day.exercises ? day.exercises.length : 0;
+        html += '<span class="md-count">' + exCount + ' ex</span>';
+      } else {
+        html += '<span class="md-name">' + DAY_SHORT[dow] + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// ==========================================
+// SCROLL TO TODAY
+// ==========================================
+function updateScrollTodayBtn() {
+  const btn = document.getElementById('scroll-today-btn');
+  const todayInfo = getTodayInfo();
+  const el = document.getElementById('day-' + todayInfo.weekIndex + '-' + todayInfo.dayOfWeek);
+  if (!el) { btn.classList.remove('show'); return; }
+  const rect = el.getBoundingClientRect();
+  const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+  btn.classList.toggle('show', !isVisible);
+}
+
+function scrollToToday() {
+  const todayInfo = getTodayInfo();
+  const el = document.getElementById('day-' + todayInfo.weekIndex + '-' + todayInfo.dayOfWeek);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ==========================================
+// MODE SWITCHING
+// ==========================================
+function switchMode(mode) {
+  workoutMode = mode;
+  render._didInitialScroll = false;
+  saveState();
+  render();
+  document.querySelectorAll('.mode-seg').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+}
+
+// ==========================================
+// DATE HANDLING
+// ==========================================
+function onDateChange(input, weekIndex, dayOfWeek) {
+  const dd = getDayDates();
+  if (!dd[weekIndex]) dd[weekIndex] = {};
+  dd[weekIndex][dayOfWeek] = input.value;
+  saveState();
+  render();
+}
+
+// ==========================================
+// INLINE EDIT HANDLERS
+// ==========================================
+function onWeightBlur(el, weekIndex, dayOfWeek, exIdx, name) {
+  const prev = el.dataset.prev || '';
+  const val = el.textContent.trim();
+  if (val === prev) return;
+  if (val && val !== '—') {
+    setWeight(name, weekIndex, dayOfWeek, exIdx, val);
+    saveState();
+    render();
+    toast('Weight: ' + val + (workoutMode === 'gym' ? ' lbs' : ''));
+  } else {
+    el.textContent = prev || '—';
+  }
+}
+
+function onRepChange(input, weekIndex, dayOfWeek, exIdx, setIdx) {
+  const val = input.value.trim();
+  const sess = getSession(weekIndex, dayOfWeek, exIdx);
+  if (val === '' || val === '0') {
+    sess.reps[setIdx] = undefined;
+  } else {
+    sess.reps[setIdx] = parseInt(val) || 0;
+  }
+
+  const validReps = sess.reps.filter(r => r !== undefined && r !== null);
+  const maxRep = validReps.length > 0 ? Math.max(...validReps) : 0;
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+  const name = day.exercises[exIdx].exercise;
+  const prog = getProgression()[name];
+  if (prog && maxRep > 0) {
+    prog.reps = maxRep;
+  }
+
+  saveState();
+  render();
+}
+
+// ==========================================
+// MODALS
+// ==========================================
+function openExerciseModal(weekIndex, dayOfWeek, exIdx) {
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+  const ex = day.exercises[exIdx];
+  const prog = getProgression()[ex.exercise];
+  const group = ex.muscle;
+  const swapExs = getExByGroup()[group] || Object.keys(getProgression());
+
+  let html = '<h2>' + ex.exercise + '</h2>';
+  html += '<div class="sub">' + ex.muscle + ' · ' + (prog ? prog.range : '') + ' · Sets: ' + ex.sets + ' · Week ' + (weekIndex + 1) + ', ' + DAY_NAMES[dayOfWeek] + '</div>';
+
+  const prev = getPreviousStats(ex.exercise, weekIndex, dayOfWeek, exIdx);
+  if (prev) {
+    html += '<div style="font-size:11px;color:var(--amber);margin-bottom:12px">';
+    html += 'Previous (Week ' + (prev.weekIndex + 1) + ', ' + DAY_NAMES[prev.dayOfWeek] + '): ' + prev.weight + ' lbs × ' + prev.reps.filter(r => r !== undefined).join(', ');
+    html += '</div>';
+  }
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label">Swap Exercise (' + group + ')</label>';
+  html += '<div class="swap-list">';
+  swapExs.forEach(name => {
+    const sel = name === ex.exercise ? ' selected' : '';
+    html += '<div class="swap-chip' + sel + '" onclick="swapExercise(' + weekIndex + ',' + dayOfWeek + ',' + exIdx + ',\'' + name.replace(/'/g, "\\'") + '\')">' + name + '</div>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label">Sets</label>';
+  html += '<div class="sets-controls">';
+  html += '<button class="sets-btn" onclick="changeSets(' + weekIndex + ',' + dayOfWeek + ',' + exIdx + ',-1)">−</button>';
+  html += '<span class="sets-num">' + ex.sets + '</span>';
+  html += '<button class="sets-btn" onclick="changeSets(' + weekIndex + ',' + dayOfWeek + ',' + exIdx + ',1)">+</button>';
+  html += '</div></div>';
+
+  html += '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+
+  document.getElementById('modal').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function swapExercise(weekIndex, dayOfWeek, exIdx, newName) {
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+  day.exercises[exIdx].exercise = newName;
+  const prog = getProgression()[newName];
+  if (prog) day.exercises[exIdx].muscle = prog.group;
+  saveState();
+  openExerciseModal(weekIndex, dayOfWeek, exIdx);
+  render();
+}
+
+function changeSets(weekIndex, dayOfWeek, exIdx, delta) {
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+  const ex = day.exercises[exIdx];
+  ex.sets = Math.max(1, Math.min(6, ex.sets + delta));
+  saveState();
+  openExerciseModal(weekIndex, dayOfWeek, exIdx);
+  render();
+}
+
+function openAddExercise(weekIndex, dayOfWeek) {
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+  const groups = Object.keys(getExByGroup()).sort();
+  let html = '<h2>Add Exercise</h2>';
+  html += '<div class="sub">Week ' + (weekIndex + 1) + ' — ' + day.day + '</div>';
+  html += '<div class="form-group">';
+  html += '<label class="form-label">Muscle Group</label>';
+  html += '<select class="form-select" id="add-group" onchange="updateAddExercises()">';
+  html += groups.map(g => '<option value="' + g + '">' + g + '</option>').join('');
+  html += '</select></div>';
+  html += '<div class="form-group">';
+  html += '<label class="form-label">Exercise</label>';
+  html += '<select class="form-select" id="add-exercise"></select></div>';
+  html += '<div class="form-group">';
+  html += '<label class="form-label">Sets</label>';
+  html += '<div class="sets-controls">';
+  html += '<button class="sets-btn" onclick="modAddSets(-1)">−</button>';
+  html += '<span class="sets-num" id="add-sets-num">3</span>';
+  html += '<button class="sets-btn" onclick="modAddSets(1)">+</button>';
+  html += '</div></div>';
+  html += '<button class="btn btn-primary" onclick="doAddExercise(' + weekIndex + ',' + dayOfWeek + ')">Add</button>';
+  html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>';
+
+  document.getElementById('modal').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('show');
+  updateAddExercises();
+  window._addSets = 3;
+}
+
+function modAddSets(d) {
+  window._addSets = Math.max(1, Math.min(6, (window._addSets || 3) + d));
+  document.getElementById('add-sets-num').textContent = window._addSets;
+}
+
+function updateAddExercises() {
+  const group = document.getElementById('add-group').value;
+  const exs = getExByGroup()[group] || Object.keys(getProgression());
+  const sel = document.getElementById('add-exercise');
+  sel.innerHTML = exs.map(e => '<option value="' + e + '">' + e + '</option>').join('');
+}
+
+function doAddExercise(weekIndex, dayOfWeek) {
+  const group = document.getElementById('add-group').value;
+  const exercise = document.getElementById('add-exercise').value;
+  const sets = window._addSets || 3;
+  const day = getWorkoutDay(weekIndex, dayOfWeek);
+
+  day.exercises.push({ muscle: group, exercise, sets });
+  saveState();
+  closeModal();
+  render();
+  toast('Added: ' + exercise);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+// ==========================================
+// CSV EXPORT
+// ==========================================
+function exportCSV() {
+  const rows = [['Week','Day','Day Name','Exercise','Muscle','Weight','Set 1','Set 2','Set 3','Set 4','Set 5','Set 6','Day Notes','Ex Notes','Done','Date']];
+  const sl = getSessionLog();
+  const dn = getDayNotes();
+  const dd = getDayDates();
+  const en = getExerciseNotes();
+
+  const weeks = new Set();
+  Object.keys(sl).forEach(k => weeks.add(parseInt(k)));
+  Object.keys(dn).forEach(k => weeks.add(parseInt(k)));
+  Object.keys(dd).forEach(k => weeks.add(parseInt(k)));
+  Object.keys(en).forEach(k => weeks.add(parseInt(k)));
+
+  const sortedWeeks = [...weeks].sort((a, b) => a - b);
+  if (sortedWeeks.length === 0) sortedWeeks.push(0);
+
+  sortedWeeks.forEach(wi => {
+    for (let dow = 0; dow < 7; dow++) {
+      const day = getWorkoutDay(wi, dow);
+      if (day.day === 'Rest') {
+        rows.push([wi + 1, DAY_NAMES[dow], 'Rest', '', '', '', '', '', '', '', '', '', (dn[wi] && dn[wi][dow]) || '', '', '', (dd[wi] && dd[wi][dow]) || '']);
+        continue;
+      }
+      day.exercises.forEach((ex, exIdx) => {
+        const sess = (sl[wi] && sl[wi][dow] && sl[wi][dow][exIdx]) || {};
+        const w = sess.weight || getWeight(ex.exercise, wi, dow, exIdx);
+        const reps = sess.reps || [];
+        rows.push([
+          wi + 1, DAY_NAMES[dow], day.day, ex.exercise, ex.muscle,
+          w || (getProgression()[ex.exercise] ? getProgression()[ex.exercise].weight : ''),
+          reps[0] !== undefined ? reps[0] : '', reps[1] !== undefined ? reps[1] : '',
+          reps[2] !== undefined ? reps[2] : '', reps[3] !== undefined ? reps[3] : '',
+          reps[4] !== undefined ? reps[4] : '', reps[5] !== undefined ? reps[5] : '',
+          (dn[wi] && dn[wi][dow]) || '',
+          (en[wi] && en[wi][dow] && en[wi][dow][exIdx]) || '',
+          sess.done ? 'Yes' : '',
+          (dd[wi] && dd[wi][dow]) || '',
+        ]);
+      });
+    }
+  });
+
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const suffix = workoutMode === 'travel' ? '-travel' : '';
+  a.download = 'billys-workout' + suffix + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV downloaded!');
+}
+
+// ==========================================
+// TOAST & MODAL
+// ==========================================
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+document.getElementById('modal-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeModal();
+});
+
+// ==========================================
+// NOTES
+// ==========================================
+function toggleNotes(weekIndex, dayOfWeek) {
+  const key = weekIndex + '-' + dayOfWeek;
+  const section = document.getElementById('notes-' + key);
+  const textarea = document.getElementById('notes-area-' + key);
+  section.classList.toggle('open');
+  if (section.classList.contains('open')) textarea.focus();
+}
+
+function saveNotes(weekIndex, dayOfWeek) {
+  const key = weekIndex + '-' + dayOfWeek;
+  const textarea = document.getElementById('notes-area-' + key);
+  if (!textarea) return;
+  const val = textarea.value.trim();
+  const dn = getDayNotes();
+  if (!dn[weekIndex]) dn[weekIndex] = {};
+  dn[weekIndex][dayOfWeek] = val;
+  saveState();
+  const badge = document.getElementById('notes-badge-' + key);
+  if (badge) badge.classList.toggle('show', !!val);
+}
+
+function autoResizeNotes(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.max(36, el.scrollHeight) + 'px';
+  clearTimeout(el._saveTimer);
+  el._saveTimer = setTimeout(() => {
+    const key = el.id.replace('notes-area-', '');
+    const [wi, dow] = key.split('-');
+    saveNotes(parseInt(wi), parseInt(dow));
+  }, 800);
+}
+
+// ==========================================
+// EXERCISE NOTES
+// ==========================================
+function toggleExNotes(weekIndex, dayOfWeek, exIdx) {
+  const row = document.getElementById('ex-notes-row-' + weekIndex + '-' + dayOfWeek + '-' + exIdx);
+  const textarea = document.getElementById('ex-notes-area-' + weekIndex + '-' + dayOfWeek + '-' + exIdx);
+  row.classList.toggle('open');
+  if (row.classList.contains('open')) textarea.focus();
+}
+
+function saveExNotes(weekIndex, dayOfWeek, exIdx) {
+  const textarea = document.getElementById('ex-notes-area-' + weekIndex + '-' + dayOfWeek + '-' + exIdx);
+  if (!textarea) return;
+  const val = textarea.value.trim();
+  const en = getExerciseNotes();
+  if (!en[weekIndex]) en[weekIndex] = {};
+  if (!en[weekIndex][dayOfWeek]) en[weekIndex][dayOfWeek] = {};
+  en[weekIndex][dayOfWeek][exIdx] = val;
+  saveState();
+  const selector = '.ex-notes-toggle[onclick*="toggleExNotes(' + weekIndex + ',' + dayOfWeek + ',' + exIdx + ')"]';
+  const toggle = document.querySelector(selector);
+  if (toggle) toggle.classList.toggle('has-note', !!val);
+}
+
+function autoResizeExNotes(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.max(30, el.scrollHeight) + 'px';
+  clearTimeout(el._saveTimer);
+  el._saveTimer = setTimeout(() => {
+    const id = el.id.replace('ex-notes-area-', '');
+    const parts = id.split('-');
+    saveExNotes(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]));
+  }, 800);
+}
+
+// ==========================================
+// PWA INSTALL
+// ==========================================
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-btn').classList.remove('hidden');
+});
+
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-btn').classList.add('hidden');
+  deferredPrompt = null;
+  toast('App installed! 🎉');
+});
+
+function installApp() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((result) => {
+      if (result.outcome === 'accepted') {
+        document.getElementById('install-btn').classList.add('hidden');
+      }
+      deferredPrompt = null;
+    });
+  }
+}
+
+const isIOS = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if (isIOS && !isStandalone) {
+  document.getElementById('ios-guide').classList.add('show');
+  document.getElementById('install-btn').classList.add('hidden');
+}
+
+// ==========================================
+// BACK BUTTON CONFIRMATION
+// ==========================================
+window.addEventListener('beforeunload', function (e) {
+  const hasData = Object.keys(sessionLog).length > 0 || Object.keys(travelSessionLog).length > 0;
+  if (hasData) {
+    e.preventDefault();
+    e.returnValue = 'Leave Billy\'s Workout? Your progress is saved automatically.';
+    return e.returnValue;
+  }
+});
+
+// ==========================================
+// SCROLL LISTENER
+// ==========================================
+window.addEventListener('scroll', function () {
+  updateScrollTodayBtn();
+}, { passive: true });
+
+// ==========================================
+// INIT
+// ==========================================
+loadState();
+
+// Auto-fill today's date
+const todayInfo = getTodayInfo();
+const todayDateStr = getTodayDateStr();
+const dd2 = getDayDates();
+if (!dd2[todayInfo.weekIndex]) dd2[todayInfo.weekIndex] = {};
+if (!dd2[todayInfo.weekIndex][todayInfo.dayOfWeek]) {
+  dd2[todayInfo.weekIndex][todayInfo.dayOfWeek] = todayDateStr;
+  saveState();
+}
+
+// Restore mode button states
+document.querySelectorAll('.mode-seg').forEach(b => {
+  b.classList.toggle('active', b.dataset.mode === workoutMode);
+});
+
+render();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          toast('🔄 Update available — reopen the app');
+        }
+      });
+    });
+  }).catch(() => { });
+
+  navigator.serviceWorker.getRegistration().then(reg => {
+    if (reg) reg.update();
+  });
+}
+</script>
+</body>
+</html>
