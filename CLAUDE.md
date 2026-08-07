@@ -146,9 +146,12 @@ $s = Get-Content index.html -Raw; $a = $s.IndexOf('<script>') + 8; $b = $s.Index
 
 Note `.Split('<script>')` does **not** work in PowerShell — `String.Split(string)` splits on each character in that string, not the whole token. Use `IndexOf`/`Substring` as above.
 
-**Prerequisite: Node is not currently installed on William's machine, and `python`/`python3` there are the Microsoft Store placeholder shortcuts, not real interpreters.** As of 2026-08-06 this rule could not be run locally at all. Installing Node makes the command above work; that's the clean fix and worth doing, since deploys happen from his machine.
+**Node is installed** — v24.19.0 at `C:\Program Files\nodejs\`, added 2026-08-06 via `winget install OpenJS.NodeJS.LTS`. The command above was verified end-to-end that day: it passes on the real `index.html` and correctly fails a deliberately broken file with a `SyntaxError`. **Python is not needed and never was** — it was only slicing out the script block, which the PowerShell line now does. `python`/`python3` on this machine are still Microsoft Store placeholder shortcuts, not real interpreters; ignore them.
 
-**Until then, the fallback is the browser:** open `index.html` locally, and if the page renders blank, open the console — a syntax error shows there as a single parse error on load. Cruder, but it catches the failure this rule exists to catch.
+**Two Windows gotchas when handing William a command:** his shell is Windows PowerShell 5.1, where `&&` is a parse error (`The token '&&' is not a valid statement separator`) — chain with `;` instead. And a freshly installed tool won't be on an already-running shell's PATH; refresh with
+`$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")` before concluding it isn't installed.
+
+**Browser fallback**, if a toolchain is ever unavailable: open `index.html` and check the console — a syntax error shows as a single parse error on load and every global goes `undefined`. See Rule #12, which is still the better option for testing behaviour rather than just syntax.
 
 **In a Linux sandbox** (where Claude often runs), the original still applies:
 

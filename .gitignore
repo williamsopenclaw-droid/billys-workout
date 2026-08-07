@@ -3,3 +3,7 @@
 *.v2*-backup
 .v2*-backup
 .netlify/
+
+# Scratch file from the Rule #11 syntax check; normally deleted by the command,
+# but left behind if node --check fails.
+chk.js
