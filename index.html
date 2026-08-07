@@ -136,6 +136,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .add-ex-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;margin-top:10px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s;width:100%}
 .add-ex-btn:active{background:var(--card);color:var(--text)}
 
+/* Day-view back bar */
+.day-back{display:flex;align-items:center;gap:10px;padding:0 0 14px 0;margin-bottom:2px}
+.day-back button{font-size:14px;padding:6px 14px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--accent);font-family:inherit;cursor:pointer;font-weight:600}
+.day-back button:active{background:var(--accent);color:var(--bg)}
+.day-back .day-back-title{font-size:16px;font-weight:700;color:var(--text)}
+
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;align-items:flex-end;justify-content:center}
 .modal-overlay.show{display:flex}
@@ -966,18 +972,27 @@ function navToday(){
 }
 
 function goToDay(ds){
-  viewState.anchor = ds;
-  viewState.mode = 'weekly';
-  document.querySelectorAll('.view-seg').forEach(b => b.classList.toggle('active', b.dataset.view === 'weekly'));
+  viewState.dayAnchor = ds;
+  viewState.mode = 'day';
+  // hide view-bar; restore when returning
+  const vb = document.getElementById('view-bar');
+  if (vb) vb.style.display = 'none';
+  document.getElementById('mode-toggle').style.display = 'none';
+  render();
+  window.scrollTo(0, 0);
+}
+
+function backToMonth(){
+  viewState.mode = 'monthly';
+  const vb = document.getElementById('view-bar');
+  if (vb) vb.style.display = '';
+  document.getElementById('mode-toggle').style.display = '';
   updateNavLabels();
   render();
-  setTimeout(() => {
-    const el = document.getElementById('day-' + ds);
-    if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
-  }, 120);
 }
 
 function updateNavLabels(){
+  if (viewState.mode === 'day') return;
   const btns = document.querySelectorAll('#week-nav .nav-btn');
   if (btns.length >= 3){
     const unit = viewState.mode === 'monthly' ? 'Month' : 'Week';
@@ -1001,11 +1016,17 @@ function render(){
   updateNavLabels();
 
   const c = document.getElementById('workout-container');
-  c.innerHTML = (viewState.mode === 'monthly' ? renderMonth() : renderWeek())
-    + '<div class="ver">v28 · Rotating 3-Day Split · +10% progression · '
+  let html;
+  if (viewState.mode === 'day'){
+    html = renderDayView(viewState.dayAnchor);
+  } else {
+    html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
+  }
+  html += '<div class="ver">v29 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
+  c.innerHTML = html;
 
-  window.scrollTo(0, y);
+  if (viewState.mode !== 'day') window.scrollTo(0, y);
   updateScrollTodayBtn();
 }
 
@@ -1095,6 +1116,26 @@ function renderMonth(){
   html += '<div class="block-note">Exercise block <b>' + bi.variant + '</b> · week ' + bi.week + ' of ' + bi.total + '</div>';
   html += '<div class="hint">Tap any day to change what it is.</div>';
   return html;
+}
+
+// ------------------------------------------
+// Day view (standalone, single-day focus)
+// ------------------------------------------
+function renderDayView(ds){
+  const type = getDayType(ds);
+  let h = '<div class="day-back"><button onclick="backToMonth()">← Calendar</button>'
+    + '<span class="day-back-title">' + DAY_NAMES[dowOf(ds)] + ' · ' + fmtLong(ds) + '</span></div>';
+
+  if (type === 'Rest'){
+    h += '<div class="rest-day"><div class="icon">😴</div>'
+      + '<div class="label">' + DAY_NAMES[dowOf(ds)] + ' ' + fmtShort(ds) + ' — Rest</div>'
+      + '<div class="sub">Recover. Eat. Sleep.</div>'
+      + '<button class="tool-btn" style="margin-top:10px" onclick="openDayModal(\'' + ds + '\')">Change day</button>'
+      + '</div>';
+  } else {
+    h += renderDay(ds, ds === todayStr());
+  }
+  return h;
 }
 
 // ------------------------------------------
