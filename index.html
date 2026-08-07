@@ -60,20 +60,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .archive-btn:active{background:var(--card);border-color:var(--accent);color:var(--accent)}
 .archived-banner{text-align:center;padding:12px;margin:4px 0 16px;font-size:11px;color:var(--muted);background:var(--card);border-radius:8px;border:1px dashed var(--border);opacity:0.7}
 
-/* Month grid */
-.month-grid{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
-.month-week-row{display:flex;gap:4px}
-.month-day{flex:1;min-width:0;border-radius:8px;padding:6px 4px;text-align:center;cursor:pointer;background:var(--surface);border:1px solid var(--border);transition:all .12s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px}
-.month-day:active{background:var(--card);border-color:var(--accent)}
-.month-day.rest{opacity:0.45}
-.month-day.today{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}
-.month-day .md-num{font-size:11px;font-weight:600;color:var(--muted)}
-.month-day.today .md-num{color:var(--green)}
-.month-day .md-name{font-size:9px;font-weight:700;color:var(--text);line-height:1.1;text-align:center}
-.month-day .md-count{font-size:8px;color:var(--muted)}
-.month-day .md-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-.month-day.rest .md-name{color:var(--muted)}
-
 /* Day block */
 .day-block{margin-bottom:14px}
 .day-label{font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;padding:0 4px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}
@@ -863,7 +849,7 @@ function saveState(){
       travelProgression: TRAVEL_PROGRESSION,
       store,
     }));
-  } catch(e){ console.error('Save failed', e); }
+  } catch(e){ console.error('Save failed', e); toast('⚠️ Could not save — storage may be full'); }
 }
 
 const LEGACY_SUNDAY = '2026-06-07';   // week 0, day 0 in the old schema
@@ -1362,13 +1348,17 @@ function swapExercise(ds, i, name){
   const sess = peekSession(ds, i);
   if (sess){ sess.weight = undefined; }
   saveState();
-  render();
   openExerciseModal(ds, i);
 }
 
 function changeSets(ds, i, d){
   const plan = editPlan(ds);
+  const oldSets = plan[i].sets;
   plan[i].sets = Math.max(1, Math.min(6, plan[i].sets + d));
+  if (plan[i].sets < oldSets){
+    const sess = peekSession(ds, i);
+    if (sess && sess.reps) sess.reps.length = plan[i].sets;
+  }
   syncProgression(ds, i);
   saveState();
   render();
@@ -1556,6 +1546,9 @@ function toast(msg){
 
 document.getElementById('modal-overlay').addEventListener('click', function(e){
   if (e.target === this) closeModal();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && document.getElementById('modal-overlay').classList.contains('show')) closeModal();
 });
 
 // ==========================================

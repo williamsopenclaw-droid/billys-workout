@@ -1,4 +1,4 @@
-const VERSION = 'v18';
+const VERSION = 'v28';
 const CACHE = `billys-workout-${VERSION}`;
 const ASSETS = [
   'index.html',

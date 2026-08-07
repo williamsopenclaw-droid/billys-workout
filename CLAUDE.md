@@ -199,7 +199,23 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `c5aa8b8` (2026-08-06).** Before writing new entries, run `git log c5aa8b8..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `fdcec88` (2026-08-06).** Before writing new entries, run `git log fdcec88..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-07 — v28 review fixes (six cleanups, `sw.js` → v28).**
+
+  Applied all six recommended fixes from the v28 review:
+
+  1. **Removed duplicate CSS blocks** — `.month-grid` and `.month-day` were defined twice (lines 64-77 and lines 220-236). The first set was dead — the second always won. Removed the first, file went from 1612 → 1598 lines.
+
+  2. **Bumped `sw.js` VERSION from v18 to v28** — it was 10 versions behind. Without this, PWA users who installed pre-v28 would keep the old cached app.
+
+  3. **`changeSets` now truncates `sess.reps` when reducing sets** — if an exercise drops from 5 sets to 3, set 4 and 5 rep values are now discarded. Before they stuck around in localStorage forever (invisible in the UI but alive in exports).
+
+  4. **Escape key closes the modal** — `document.addEventListener('keydown', ...)` added. Small but makes desktop use feel responsive.
+
+  5. **`saveState` now shows a toast on failure** — instead of silently swallowing a full-storage error, it tells the user. The console.error stays (for debugging).
+
+  6. **`swapExercise` no longer calls `render()` before reopening the modal** — it was doing a full-page render that got immediately covered by the modal. Now it just saves and opens the modal, saving a render cycle.
 
 - **2026-08-06 — progression rollback fix, plus two small cleanups (`sw.js` → v18).**
 
