@@ -37,12 +37,14 @@ No `package.json`, no bundler, no CI. Edit `index.html` directly.
 - Repo: `williamsopenclaw-droid/billys-workout` (public). Git-linked auto-deploy on push to `main` — **wired up 2026-08-06**, before that it was manual drag-and-drop deploys.
 
 **On disk**
-- Windows: `D:\GitHub Repo\billys-workout\`
-- Same reasoning as the NorthShield repos — keep the clone off any OneDrive/Drive-synced path so cloud sync doesn't fight `.git\index`.
+- Windows: `C:\Users\wbalk\OneDrive\Documents\GitHub\billys-workout\`
+- **This clone is inside OneDrive, and that is a known problem.** The NorthShield guidance — keep clones off any OneDrive/Drive-synced path so cloud sync doesn't fight `.git\index` — applies here and hasn't been acted on. It has already bitten once: the stale `.git/index.lock` cleared on 2026-08-06 (see Recent changes) was this. Moving the clone off OneDrive is the real fix; until then, expect the two symptoms below.
+- **Sync lag makes tools read a stale tree.** A session on 2026-08-06 listed this directory and got it as it stood one commit earlier — `CLAUDE.md` appeared not to exist at all, and `git log` agreed. PowerShell read the true state immediately. If a file or commit you know exists seems to be missing, don't conclude it's gone: re-check with PowerShell (`Get-ChildItem -Force`, `git ls-files`) before believing the absence.
+- **`.git/index.lock` can go stale** with no git process holding it. If commits start failing, check for a 0-byte lock file and delete it.
 
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
-- `caprica_workout_v2_v3_backup` — one-time snapshot of the pre-v28 blob, written during migration. Safe to leave forever; it's small and it's the only copy of the old shape.
+- `caprica_workout_v2_v3_backup` — one-time snapshot of the pre-v28 blob, written during migration. Safe to leave forever; it's small and it's the only copy of the old shape. **Searching the source for this key finds nothing** — it's built as `LS_KEY + '_v3_backup'` at the migration branch in `loadState()`. It exists; don't delete it as dead code on the strength of a failed grep.
 
 ---
 
@@ -128,7 +130,23 @@ The `VERSION` constant at the top of `sw.js` names the cache. If you ship `index
 
 ### 11. It's one file — verify the whole thing parses
 
-There's no build step and no linter, so a stray brace ships silently and the app renders a blank page. After editing, extract the script block and syntax-check it:
+There's no build step and no linter, so a stray brace ships silently and the app renders a blank page. After editing, extract the script block and syntax-check it.
+
+`index.html` has exactly one `<script>` block (currently lines 313–1593), which is what makes the crude extraction below safe. If a second one is ever added, these commands check only the first — fix the extraction rather than trusting a pass.
+
+**On William's Windows machine**, PowerShell:
+
+```powershell
+$s = Get-Content index.html -Raw; $a = $s.IndexOf('<script>') + 8; $b = $s.IndexOf('</script>'); Set-Content chk.js $s.Substring($a, $b - $a) -Encoding utf8; node --check chk.js; Remove-Item chk.js
+```
+
+Note `.Split('<script>')` does **not** work in PowerShell — `String.Split(string)` splits on each character in that string, not the whole token. Use `IndexOf`/`Substring` as above.
+
+**Prerequisite: Node is not currently installed on William's machine, and `python`/`python3` there are the Microsoft Store placeholder shortcuts, not real interpreters.** As of 2026-08-06 this rule could not be run locally at all. Installing Node makes the command above work; that's the clean fix and worth doing, since deploys happen from his machine.
+
+**Until then, the fallback is the browser:** open `index.html` locally, and if the page renders blank, open the console — a syntax error shows there as a single parse error on load. Cruder, but it catches the failure this rule exists to catch.
+
+**In a Linux sandbox** (where Claude often runs), the original still applies:
 
 ```bash
 python3 -c "s=open('index.html',encoding='utf-8').read(); open('/tmp/chk.js','w').write(s.split('<script>')[1].split('</script>')[0])"
@@ -145,11 +163,13 @@ Worth rebuilding if you make a change of any size. The render functions all retu
 
 ## Open work / known gaps
 
-- **Auto-deploy is linked but unproven.** The 2026-08-06 deploy reports `deploy_source: "api"` because it was triggered by the linking action, not a push. The repo link itself is confirmed (`branch: main`, `manual_deploy: false`, branch URL is `main--workout-tracker-app-403.netlify.app`). Next push should produce a deploy on its own — check it does.
+- ~~Auto-deploy is linked but unproven.~~ **Resolved 2026-08-06 — it works.** Pushing `32978a4` produced deploy `6a7540d4d128f70008f191ed` on its own: `commit_ref` matches the pushed commit, `branch: main`, `manual_deploy: false`, `committer: williamsopenclaw-droid`, published 4s after build. No further action.
+  **Caveat for whoever checks this next:** `deploy_source` still reads `"api"` even on a genuine push-triggered deploy, so it is *not* a reliable signal and the earlier reading of it was a false alarm. Judge by `commit_ref` matching HEAD, `manual_deploy: false`, and `committer` instead.
 - **`manifest.json` description is stale** — still says "Billy's 2-Week Workout Rotation Tracker". There's no 2-week cycle any more. Harmless, shows on install.
 - **Light-dumbbell rounding** — see Rule #6.
 - **Rep ranges aren't editable in the UI.** `range` and `top` are baked into `PROGRESSION`. Changing what counts as a completed set means editing the source.
 - **No data export/import beyond CSV.** CSV is one-way. If Billy switches phones there's no way to move history across — it's `localStorage`, tied to the origin and the browser profile.
+- **Suspected: `swapExercise` skips the progression rollback.** It sets `sess.progressed = false` by hand but never restores the old exercise's `PROGRESSION[name].weight` from `progressedFrom`, and leaves `progressedFrom` on the session. If Billy earns a bump and then swaps that exercise out, the old exercise's working weight looks permanently inflated — the exact failure Rule #5 exists to prevent, reached by a path that doesn't call `syncProgression()`. `changeSets` right next to it does call it. **Spotted by reading, not reproduced — verify before fixing.**
 
 ---
 
@@ -166,7 +186,13 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `d2ba4de` (2026-08-06).** Before writing new entries, run `git log d2ba4de..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `32978a4` (2026-08-06).** Before writing new entries, run `git log 32978a4..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-06 — CLAUDE.md reviewed and corrected (docs only, no app change).** Every house rule was re-checked against `index.html` and they all hold: no `ROTATION_START` or week indices survive, `toISOString` appears zero times, `pinIfNeeded` is called from exactly the four paths Rule #4 names, `bumpWeight` matches Rule #6, `sw.js` is on v17. Four things were wrong and are now fixed:
+
+  **The on-disk path was wrong** — it claimed `D:\GitHub Repo\`, but the clone is inside OneDrive, the very thing the line below it warns against. **Rule #11's syntax check couldn't run** — it assumed `python3`, `node` and `/tmp`, none of which exist on William's Windows machine; a PowerShell version and a browser fallback were added. **The `_v3_backup` key** is assembled from `LS_KEY` and so can't be found by searching for it, which reads like it doesn't exist. **The docs-current hash** was stale.
+
+  Also recorded: the OneDrive clone causes tools to read a stale tree. In this session a directory listing returned the repo one commit behind and reported `CLAUDE.md` as nonexistent; PowerShell saw it correctly. That is worth knowing before concluding a file is missing.
 
 - **2026-08-06 — v28: rotation-driven schedule, editable day types, 10% progression (`d2ba4de`, `sw.js` → v17).** Three changes William asked for, plus one bug found on the way in.
 
