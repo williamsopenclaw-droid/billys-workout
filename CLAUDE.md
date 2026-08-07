@@ -196,7 +196,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `d446ab9` (2026-08-06).** Before writing new entries, run `git log d446ab9..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `c5aa8b8` (2026-08-06).** Before writing new entries, run `git log c5aa8b8..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
 
 - **2026-08-06 — progression rollback fix, plus two small cleanups (`sw.js` → v18).**
 
