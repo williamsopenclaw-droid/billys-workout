@@ -805,6 +805,21 @@ function syncProgression(ds, exIdx){
   return null;
 }
 
+// Roll back an awarded bump when the session that earned it is about to be
+// discarded — exercise swapped out or removed. syncProgression() can't do this
+// after the fact: it reads the *current* plan, so once the plan entry changes
+// the award is orphaned and the weight stays inflated forever.
+// Must be called BEFORE the plan is mutated, while `name` still identifies it.
+function revertProgression(ds, exIdx, name){
+  if (!name) return;
+  const sess = peekSession(ds, exIdx);
+  if (!sess || !sess.progressed) return;
+  const prog = getProgression()[name];
+  if (prog && sess.progressedFrom !== undefined) prog.weight = String(sess.progressedFrom);
+  sess.progressed = false;
+  delete sess.progressedFrom;
+}
+
 // ==========================================
 // PREVIOUS STATS — most recent earlier day with this exercise logged
 // ==========================================
@@ -1340,11 +1355,12 @@ function openExerciseModal(ds, i){
 
 function swapExercise(ds, i, name){
   const plan = editPlan(ds);
+  revertProgression(ds, i, plan[i] && plan[i].exercise);   // before the name changes
   plan[i].exercise = name;
   const p = getProgression()[name];
   if (p) plan[i].muscle = p.group;
   const sess = peekSession(ds, i);
-  if (sess){ sess.weight = undefined; sess.progressed = false; }
+  if (sess){ sess.weight = undefined; }
   saveState();
   render();
   openExerciseModal(ds, i);
@@ -1361,6 +1377,7 @@ function changeSets(ds, i, d){
 
 function removeExercise(ds, i){
   const plan = editPlan(ds);
+  revertProgression(ds, i, plan[i] && plan[i].exercise);   // before the entry goes
   plan.splice(i, 1);
   const sl = S().sessionLog[ds];
   if (sl){

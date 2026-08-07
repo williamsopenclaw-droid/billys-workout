@@ -38,9 +38,11 @@ No `package.json`, no bundler, no CI. Edit `index.html` directly.
 
 **On disk**
 - Windows: `C:\Users\wbalk\OneDrive\Documents\GitHub\billys-workout\`
-- **This clone is inside OneDrive, and that is a known problem.** The NorthShield guidance — keep clones off any OneDrive/Drive-synced path so cloud sync doesn't fight `.git\index` — applies here and hasn't been acted on. It has already bitten once: the stale `.git/index.lock` cleared on 2026-08-06 (see Recent changes) was this. Moving the clone off OneDrive is the real fix; until then, expect the two symptoms below.
-- **Sync lag makes tools read a stale tree.** A session on 2026-08-06 listed this directory and got it as it stood one commit earlier — `CLAUDE.md` appeared not to exist at all, and `git log` agreed. PowerShell read the true state immediately. If a file or commit you know exists seems to be missing, don't conclude it's gone: re-check with PowerShell (`Get-ChildItem -Force`, `git ls-files`) before believing the absence.
-- **`.git/index.lock` can go stale** with no git process holding it. If commits start failing, check for a 0-byte lock file and delete it.
+- That path is inside OneDrive because Windows redirects `Documents` there by default (Known Folder Move). **This is deliberate — William wants the repo in Documents. Don't propose moving it.** The NorthShield guidance about keeping clones off synced paths was written for a repo with a much heavier `.git`; here the cost/benefit doesn't hold, and it was checked properly on 2026-08-06:
+  - Every file is fully materialised on disk — no `Offline` or `ReparsePoint` attributes, so these are **not** cloud placeholders. Placeholders are what actually make tools misread OneDrive folders, and there aren't any.
+  - The OneDrive client isn't even running most of the time.
+- **If a tool reports a file or commit missing that you're sure exists, suspect your own sandbox before the filesystem.** On 2026-08-06 a Bash-based listing returned this repo one commit behind and reported `CLAUDE.md` as nonexistent; PowerShell read it correctly at the same moment. That was a stale sandbox snapshot, not OneDrive. Cross-check with PowerShell (`Get-ChildItem -Force`, `git ls-files`) before concluding anything is absent — and don't write the absence up as fact until you have.
+- **The one real risk is `.git/index.lock` going stale** if OneDrive touches `.git` mid-operation. Happened once (2026-08-06). If commits start failing, look for a 0-byte lock file with no git process holding it, and delete it. That's the whole mitigation.
 
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
@@ -95,6 +97,8 @@ When every set hits the top of the rep range, `syncProgression()` does two thing
 `sess.progressed` and `sess.progressedFrom` track the award so it can be undone. Edit a rep back down and the bump rolls back to `progressedFrom`. **Call `syncProgression()` on every rep edit, not just on completion** — it handles both directions and is idempotent. Skipping the rollback path leaves Billy's working weight permanently inflated by a typo.
 
 Bodyweight and band exercises (`weight: 'BW' | 'Light' | 'Medium' | 'Heavy'`) parse to `NaN` and bail out early. That's the guard — don't "fix" it with a default of 0.
+
+**`syncProgression()` only works while the plan still points at the exercise that earned the award.** It recomputes `met` from the *current* plan, so once the plan entry is changed or deleted the award is orphaned and the weight stays up forever. Any path that swaps or removes an exercise must call **`revertProgression(ds, exIdx, name)` first**, before mutating the plan. `swapExercise` and `removeExercise` both do. If you add another path that discards a session, it must too — this is the same trap as Rule #4, one layer down.
 
 ### 6. Rounding to 5 lb is aggressive on light weights — known, accepted, revisit if asked
 
@@ -159,17 +163,23 @@ The sandbox has no npm registry access, so jsdom isn't available. The v28 work u
 
 Worth rebuilding if you make a change of any size. The render functions all return strings, which makes them unusually easy to assert on.
 
+**Better option when you have browser tools, and the one that works with no Node installed:** open `file:///C:/Users/wbalk/OneDrive/Documents/GitHub/billys-workout/index.html` in the browser pane and drive the real functions from the console. Everything is global (plain `<script>`, no module), so `syncProgression`, `swapExercise`, `getProgression()` and friends are all directly callable. This is how the 2026-08-06 progression bug was both reproduced and verified fixed, and it needs no toolchain at all.
+
+Two things to know: `file://` has its own `localStorage`, separate from the live site, so tests can't touch real data — but snapshot and restore `caprica_workout_v2` anyway if you test against the deployed origin. And the service worker fails to register over `file://` ("unknown error occurred when fetching the script"). That console error is expected and is **not** a code fault.
+
+If the script block has a syntax error the whole file fails to parse and every global is `undefined` — so `typeof syncProgression === 'function'` doubles as the Rule #11 check.
+
 ---
 
 ## Open work / known gaps
 
 - ~~Auto-deploy is linked but unproven.~~ **Resolved 2026-08-06 — it works.** Pushing `32978a4` produced deploy `6a7540d4d128f70008f191ed` on its own: `commit_ref` matches the pushed commit, `branch: main`, `manual_deploy: false`, `committer: williamsopenclaw-droid`, published 4s after build. No further action.
   **Caveat for whoever checks this next:** `deploy_source` still reads `"api"` even on a genuine push-triggered deploy, so it is *not* a reliable signal and the earlier reading of it was a false alarm. Judge by `commit_ref` matching HEAD, `manual_deploy: false`, and `committer` instead.
-- **`manifest.json` description is stale** — still says "Billy's 2-Week Workout Rotation Tracker". There's no 2-week cycle any more. Harmless, shows on install.
+- ~~`manifest.json` description is stale.~~ Fixed 2026-08-06 — now "Upper/Lower/Arms workout tracker. Works offline."
 - **Light-dumbbell rounding** — see Rule #6.
 - **Rep ranges aren't editable in the UI.** `range` and `top` are baked into `PROGRESSION`. Changing what counts as a completed set means editing the source.
 - **No data export/import beyond CSV.** CSV is one-way. If Billy switches phones there's no way to move history across — it's `localStorage`, tied to the origin and the browser profile.
-- **Suspected: `swapExercise` skips the progression rollback.** It sets `sess.progressed = false` by hand but never restores the old exercise's `PROGRESSION[name].weight` from `progressedFrom`, and leaves `progressedFrom` on the session. If Billy earns a bump and then swaps that exercise out, the old exercise's working weight looks permanently inflated — the exact failure Rule #5 exists to prevent, reached by a path that doesn't call `syncProgression()`. `changeSets` right next to it does call it. **Spotted by reading, not reproduced — verify before fixing.**
+- ~~Suspected: `swapExercise` skips the progression rollback.~~ **Confirmed and fixed 2026-08-06** — and `removeExercise` had it too. See Rule #5 and Recent changes.
 
 ---
 
@@ -186,13 +196,23 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `32978a4` (2026-08-06).** Before writing new entries, run `git log 32978a4..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `d446ab9` (2026-08-06).** Before writing new entries, run `git log d446ab9..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-06 — progression rollback fix, plus two small cleanups (`sw.js` → v18).**
+
+  **`swapExercise` and `removeExercise` left progression bumps stranded.** Reproduced in the browser against the live site: Incline Barbell Press at 135, all sets logged at the top of the range, correctly bumped to 150 — then swapping the exercise out left it at **150 permanently**, with `progressedFrom: 135` orphaned on the session. `removeExercise` did the same and was worse: it deletes the session entry, so nothing remembered 135 at all. Real-world effect is Billy's working weight creeping up for a session he didn't actually complete.
+
+  Root cause is that `syncProgression()` recomputes from the *current* plan, so it cannot undo an award after the plan entry has changed — the rollback has to happen first. Added `revertProgression(ds, exIdx, name)` and called it at the top of both functions, before the mutation. Rule #5 now documents the constraint. Verified fixed for both paths (135 → 150 → 135), with a control check that ordinary rep-edit-down rollback still works.
+
+  **`manifest.json` description** updated — it still advertised a 2-week rotation that hasn't existed since v28.
+
+  **Added `.gitattributes`** with `* text=auto` and `*.png binary`, so Windows CRLF churn stops burying real changes in diffs. This is the thing the v28 commit had to clean up by hand.
 
 - **2026-08-06 — CLAUDE.md reviewed and corrected (docs only, no app change).** Every house rule was re-checked against `index.html` and they all hold: no `ROTATION_START` or week indices survive, `toISOString` appears zero times, `pinIfNeeded` is called from exactly the four paths Rule #4 names, `bumpWeight` matches Rule #6, `sw.js` is on v17. Four things were wrong and are now fixed:
 
   **The on-disk path was wrong** — it claimed `D:\GitHub Repo\`, but the clone is inside OneDrive, the very thing the line below it warns against. **Rule #11's syntax check couldn't run** — it assumed `python3`, `node` and `/tmp`, none of which exist on William's Windows machine; a PowerShell version and a browser fallback were added. **The `_v3_backup` key** is assembled from `LS_KEY` and so can't be found by searching for it, which reads like it doesn't exist. **The docs-current hash** was stale.
 
-  Also recorded: the OneDrive clone causes tools to read a stale tree. In this session a directory listing returned the repo one commit behind and reported `CLAUDE.md` as nonexistent; PowerShell saw it correctly. That is worth knowing before concluding a file is missing.
+  Also recorded: a directory listing returned the repo one commit behind and reported `CLAUDE.md` as nonexistent, while PowerShell saw it correctly at the same moment. **This was first written up as OneDrive sync lag. That was wrong** — checked the same day, no file carries the `Offline`/`ReparsePoint` attributes that mark cloud placeholders, and the OneDrive client wasn't running. It was a stale sandbox snapshot. The corrected guidance is under "On disk"; the lesson is to cross-check with PowerShell before recording an absence as fact.
 
 - **2026-08-06 — v28: rotation-driven schedule, editable day types, 10% progression (`d2ba4de`, `sw.js` → v17).** Three changes William asked for, plus one bug found on the way in.
 

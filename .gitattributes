@@ -1,0 +1,9 @@
+# Normalise line endings so Windows checkouts don't show whole files as
+# changed. Without this, editing on Windows rewrites CRLF into tracked files
+# and the diff drowns real changes in line-ending churn — see the v28 commit,
+# which had to revert CRLF-only noise in .gitignore, manifest.json and
+# netlify.toml by hand.
+* text=auto
+
+# Binary — never touch these.
+*.png binary

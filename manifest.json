@@ -1,7 +1,7 @@
 {
   "name": "Billy's Workout",
   "short_name": "Billy's Workout",
-  "description": "Billy's 2-Week Workout Rotation Tracker",
+  "description": "Upper/Lower/Arms workout tracker. Works offline.",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#0f172a",
