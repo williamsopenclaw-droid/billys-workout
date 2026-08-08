@@ -424,6 +424,8 @@ const DAY_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const ROTATION   = ['Upper','Lower','Arms'];
 const TYPE_LABEL = { Upper:'Upper Body', Lower:'Lower Body', Arms:'Arms / Delts / Traps', Rest:'Rest Day' };
 const TYPE_COLOR = { Upper:'#38bdf8', Lower:'#4ade80', Arms:'#a78bfa', Rest:'#475569' };
+const CUSTOM_COLOR = '#f472b6';   // every custom workout shares one colour
+const RESERVED_TYPES = ['Upper','Lower','Arms','Rest','auto'];
 
 const BLOCK_ANCHOR = '2026-06-07';  // Sunday — start of A/B block counting
 const BLOCK_WEEKS  = 10;            // 10 weeks on A, then 10 weeks on B
@@ -564,7 +566,7 @@ const TEMPLATES = {
 let workoutMode = 'gym';
 
 function blankStore(){
-  return { dayTypes:{}, dayPlans:{}, sessionLog:{}, dayNotes:{}, exNotes:{} };
+  return { dayTypes:{}, dayPlans:{}, sessionLog:{}, dayNotes:{}, exNotes:{}, customTypes:{} };
 }
 let store = { gym: blankStore(), travel: blankStore() };
 
@@ -596,6 +598,16 @@ function nextType(t){
   return i === -1 ? 'Upper' : ROTATION[(i + 1) % ROTATION.length];
 }
 
+// Custom workouts sit alongside the rotation without being part of it. Guard
+// every rotation decision with this: nextType() falls back to 'Upper' for
+// anything it doesn't recognise, so feeding it a custom type would silently
+// reset the cycle — the exact desync v28 was built to remove.
+function isRotationType(t){ return ROTATION.indexOf(t) !== -1; }
+function customTypes(){ return S().customTypes || {}; }
+function isCustomType(t){ return Object.prototype.hasOwnProperty.call(customTypes(), t); }
+function typeLabel(t){ return TYPE_LABEL[t] || t; }              // custom types label as their own name
+function typeColor(t){ return TYPE_COLOR[t] || CUSTOM_COLOR; }   // and share one colour
+
 function hasLog(ds){
   const day = S().sessionLog[ds];
   if (!day) return false;
@@ -620,7 +632,7 @@ function projection(){
   const dt = S().dayTypes;
   let lastDate = null, lastType = null;
   Object.keys(dt).forEach(ds => {
-    if (dt[ds] === 'Rest') return;
+    if (!isRotationType(dt[ds])) return;          // Rest and custom days don't anchor the cycle
     if (ds > today) return;                       // future pins don't anchor "next"
     if (!lastDate || ds > lastDate){ lastDate = ds; lastType = dt[ds]; }
   });
@@ -640,7 +652,10 @@ function projection(){
     if (dt[d] !== undefined){                     // manually pinned day
       if (dt[d] !== 'Rest'){
         if (!firstDate){ firstDate = d; firstType = dt[d]; }
-        t = nextType(dt[d]);
+        // A custom workout takes up the day (so the next one isn't tomorrow)
+        // but leaves the rotation where it was — Upper/Lower/Arms carries on
+        // around it rather than being knocked forward.
+        if (isRotationType(dt[d])) t = nextType(dt[d]);
         gap = 1;
       }
     } else if (gap === 0){
@@ -701,6 +716,9 @@ function pinIfNeeded(ds){
 // DAY PLANS
 // ==========================================
 function templateFor(ds, type){
+  // Custom workouts have a single exercise list — no A/B variant.
+  const c = customTypes()[type];
+  if (c) return c.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
   const v = getVariant(ds);
   const t = TEMPLATES[workoutMode][v][type];
   return t ? t.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets })) : [];
@@ -938,13 +956,14 @@ function loadState(){
   if ((data._schemaVersion || 0) >= 4 && data.store){
     ['gym','travel'].forEach(m => {
       const s = data.store[m] || {};
-      store[m] = {
-        dayTypes:   s.dayTypes   || {},
-        dayPlans:   s.dayPlans   || {},
-        sessionLog: s.sessionLog || {},
-        dayNotes:   s.dayNotes   || {},
-        exNotes:    s.exNotes    || {},
-      };
+      // Keep unknown keys. This used to whitelist the five known ones, which
+      // meant a device on an older build would silently DROP anything newer —
+      // then save it back without it and push that loss to every other device
+      // over sync. Additive schema changes must survive an out-of-date client.
+      const base = blankStore();
+      Object.keys(base).forEach(k => { if (s[k] && typeof s[k] === 'object') base[k] = s[k]; });
+      Object.keys(s).forEach(k => { if (!(k in base)) base[k] = s[k]; });
+      store[m] = base;
     });
   } else {
     try { localStorage.setItem(LS_KEY + '_v3_backup', raw); } catch(e){}
@@ -1023,7 +1042,7 @@ function render(){
   if (hp){
     const p = projection();
     hp.textContent = p.firstDate
-      ? 'Next up: ' + TYPE_LABEL[p.firstType] + ' · ' + (p.firstDate === todayStr() ? 'today' : fmtShort(p.firstDate))
+      ? 'Next up: ' + typeLabel(p.firstType) + ' · ' + (p.firstDate === todayStr() ? 'today' : fmtShort(p.firstDate))
       : '3-Day Rotation · Upper / Lower / Arms';
   }
   updateNavLabels();
@@ -1035,7 +1054,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v32 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v33 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1065,7 +1084,7 @@ function renderMonth(){
   // Legend
   html += '<div class="legend">';
   ROTATION.forEach(t => {
-    html += '<span class="lg"><i style="background:' + TYPE_COLOR[t] + '"></i>' + t + '</span>';
+    html += '<span class="lg"><i style="background:' + typeColor(t) + '"></i>' + t + '</span>';
   });
   html += '<span class="lg"><i class="lg-next"></i>Next up</span>';
   html += '<span class="lg"><i class="lg-done"></i>Logged</span>';
@@ -1101,7 +1120,7 @@ function renderMonth(){
       html += '<div class="' + cls + '" onclick="openDayModal(\'' + ds + '\')">';
       html += '<span class="md-num">' + dt.getDate() + '</span>';
       if (work){
-        html += '<span class="md-type" style="color:' + TYPE_COLOR[type] + '">' + type + '</span>';
+        html += '<span class="md-type" style="color:' + typeColor(type) + '">' + type + '</span>';
         html += '<span class="md-flag">' + (logged ? '✓' : (next ? '▶' : (pinned ? '📌' : ''))) + '</span>';
       } else {
         html += '<span class="md-type md-rest">·</span><span class="md-flag"></span>';
@@ -1116,7 +1135,7 @@ function renderMonth(){
   if (p.firstDate){
     html += '<div class="next-card" onclick="goToDay(\'' + p.firstDate + '\')">';
     html += '<div class="nc-l">NEXT WORKOUT</div>';
-    html += '<div class="nc-t" style="color:' + TYPE_COLOR[p.firstType] + '">' + TYPE_LABEL[p.firstType] + '</div>';
+    html += '<div class="nc-t" style="color:' + typeColor(p.firstType) + '">' + typeLabel(p.firstType) + '</div>';
     html += '<div class="nc-d">' + fmtLong(p.firstDate) + (p.firstDate === todayStr() ? ' · today' : '') + '</div>';
     if (p.anchorDate){
       html += '<div class="nc-s">Last logged: ' + p.anchorType + ' on ' + fmtShort(p.anchorDate) + '</div>';
@@ -1184,7 +1203,7 @@ function renderDay(ds, isToday){
   const logged = hasLog(ds);
   let html = '<div class="day-block" id="day-' + ds + '">';
   html += '<div class="day-label' + (isToday ? ' is-today' : '') + '">';
-  html += '<span style="color:' + TYPE_COLOR[type] + '">' + DAY_NAMES[dowOf(ds)] + ' — ' + TYPE_LABEL[type] + '</span>';
+  html += '<span style="color:' + typeColor(type) + '">' + DAY_NAMES[dowOf(ds)] + ' — ' + typeLabel(type) + '</span>';
   html += '<span class="day-meta">' + fmtShort(ds) + ' · ' + plan.length + ' ex';
   html += ' <button class="mini-btn" onclick="openDayModal(\'' + ds + '\')">edit</button></span>';
   html += '</div>';
@@ -1285,14 +1304,14 @@ function openDayModal(ds){
   const bi = blockInfo(ds);
 
   let h = '<h2>' + fmtLong(ds) + '</h2>';
-  h += '<div class="sub">Currently: <b style="color:' + TYPE_COLOR[cur] + '">' + TYPE_LABEL[cur] + '</b>'
+  h += '<div class="sub">Currently: <b style="color:' + typeColor(cur) + '">' + typeLabel(cur) + '</b>'
      + (pinned ? ' · set by you' : ' · auto') + ' · block ' + bi.variant + '</div>';
 
   h += '<div class="form-group"><label class="form-label">Make this day</label><div class="type-picker">';
-  ROTATION.concat(['Rest']).forEach(t => {
+  ROTATION.concat(Object.keys(customTypes()).sort()).concat(['Rest']).forEach(t => {
     const sel = t === cur && pinned ? ' selected' : '';
-    h += '<button class="type-chip' + sel + '" style="--tc:' + TYPE_COLOR[t] + '"'
-       + ' onclick="pickDayType(\'' + ds + '\',\'' + t + '\')">' + TYPE_LABEL[t] + '</button>';
+    h += '<button class="type-chip' + sel + '" style="--tc:' + typeColor(t) + '"'
+       + ' onclick="pickDayType(\'' + ds + '\',\'' + t + '\')">' + typeLabel(t) + '</button>';
   });
   h += '</div></div>';
 
@@ -1303,7 +1322,9 @@ function openDayModal(ds){
 
   if (cur !== 'Rest'){
     h += '<button class="btn btn-primary" onclick="closeModal();goToDay(\'' + ds + '\')">Open workout</button>';
+    h += '<button class="btn btn-secondary" onclick="saveDayAsCustom(\'' + ds + '\')">Save as custom workout</button>';
   }
+  h += '<button class="btn btn-secondary" onclick="openCustomTypesModal()">Manage custom workouts</button>';
   if (pinned){
     h += '<button class="btn btn-secondary" onclick="pickDayType(\'' + ds + '\',\'auto\')">↺ Back to auto</button>';
   }
@@ -1317,7 +1338,7 @@ function pickDayType(ds, type){
   setDayType(ds, type);
   closeModal();
   render();
-  toast(type === 'auto' ? 'Back to auto rotation' : fmtShort(ds) + ' → ' + TYPE_LABEL[type]);
+  toast(type === 'auto' ? 'Back to auto rotation' : fmtShort(ds) + ' → ' + typeLabel(type));
 }
 
 // ==========================================
@@ -1877,6 +1898,98 @@ async function resolveConflict(which){
     setSyncMeta({ syncedAt: res.row.updated_at, dirty:false, lastSync:new Date().toISOString() });
     setSyncStatus('ok'); toast('✅ This device kept');
   } catch(e){ setSyncStatus('error', e.message); toast('⚠️ Sync failed'); }
+}
+
+// ==========================================
+// CUSTOM WORKOUTS
+// ==========================================
+// A named exercise list you can drop on any day. Deliberately NOT part of the
+// Upper/Lower/Arms cycle — see isRotationType(). Stored per mode, because gym
+// and travel draw on different exercise catalogues, and inside `store` so it
+// rides along with backup, restore and sync for free.
+function saveDayAsCustom(ds){
+  const plan = getPlan(ds);
+  if (!plan || !plan.length){ toast('Nothing to save on this day'); return; }
+  const cur = getDayType(ds);
+  const name = (prompt('Name this workout\n\ne.g. Conditioning, Legs + Core',
+                       isCustomType(cur) ? cur : '') || '').trim();
+  if (!name) return;
+  if (RESERVED_TYPES.indexOf(name) !== -1){ toast('That name is reserved'); return; }
+  if (name.length > 24){ toast('Keep the name under 25 characters'); return; }
+  const s = S();
+  s.customTypes = s.customTypes || {};
+  const existed = !!s.customTypes[name];
+  if (existed && !confirm('"' + name + '" already exists.\n\nReplace its exercise list with this day\'s?')) return;
+  s.customTypes[name] = plan.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
+  saveState();
+  closeModal();
+  toast((existed ? 'Updated ' : 'Saved ') + name);
+}
+
+// Handlers take an index into _ctNames rather than the name itself — names are
+// user-typed and would need escaping inside an onclick attribute.
+function openCustomTypesModal(){
+  const ct = customTypes();
+  const names = Object.keys(ct).sort();
+  window._ctNames = names;
+  let h = '<h2>Custom workouts</h2>';
+  h += '<div class="sub">' + (workoutMode === 'travel' ? 'Travel' : 'Gym') + ' mode — each mode keeps its own.</div>';
+  if (!names.length){
+    h += '<div class="rule">None yet. Open any workout day, set up the exercises you want, '
+       + 'then tap <b>Save as custom workout</b>.</div>';
+  } else {
+    names.forEach((n, i) => {
+      const used = Object.keys(S().dayTypes).filter(ds => S().dayTypes[ds] === n).length;
+      h += '<div class="form-group">';
+      h += '<label class="form-label" style="color:' + CUSTOM_COLOR + '">' + esc(n) + '</label>';
+      h += '<div class="sub">' + ct[n].length + ' exercises · on ' + used + ' day' + (used === 1 ? '' : 's') + '</div>';
+      h += '<button class="btn btn-secondary" onclick="renameCustomType(' + i + ')">Rename</button>';
+      h += '<button class="btn btn-danger" onclick="deleteCustomType(' + i + ')">Delete</button>';
+      h += '</div>';
+    });
+  }
+  h += '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function renameCustomType(i){
+  const old = (window._ctNames || [])[i];
+  if (!old) return;
+  const name = (prompt('Rename "' + old + '" to:', old) || '').trim();
+  if (!name || name === old) return;
+  if (RESERVED_TYPES.indexOf(name) !== -1){ toast('That name is reserved'); return; }
+  if (name.length > 24){ toast('Keep the name under 25 characters'); return; }
+  const s = S();
+  if (s.customTypes[name]){ toast('You already have one called that'); return; }
+  s.customTypes[name] = s.customTypes[old];
+  delete s.customTypes[old];
+  Object.keys(s.dayTypes).forEach(ds => { if (s.dayTypes[ds] === old) s.dayTypes[ds] = name; });
+  invalidateProjection(); saveState();
+  closeModal(); openCustomTypesModal();
+  toast('Renamed to ' + name);
+}
+
+function deleteCustomType(i){
+  const name = (window._ctNames || [])[i];
+  if (!name) return;
+  const s = S();
+  const days = Object.keys(s.dayTypes).filter(ds => s.dayTypes[ds] === name);
+  if (!confirm('Delete "' + name + '"?\n\n' + days.length + ' day(s) use it. They keep their exercises '
+             + 'and any logged sets — only the saved template goes.')) return;
+  // Freeze the list onto those days before the template disappears. Same trap
+  // as unpinning a logged day: otherwise the reps survive with nothing naming
+  // the exercises they belong to.
+  days.forEach(ds => {
+    if (!s.dayPlans[ds]){
+      const p = (s.customTypes[name] || []).map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
+      if (p.length) s.dayPlans[ds] = p;
+    }
+  });
+  delete s.customTypes[name];
+  invalidateProjection(); saveState();
+  closeModal(); render();
+  toast('Deleted ' + name);
 }
 
 function openSyncModal(){
