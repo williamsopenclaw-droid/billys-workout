@@ -1054,7 +1054,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v33 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v34 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1934,15 +1934,17 @@ function openCustomTypesModal(){
   window._ctNames = names;
   let h = '<h2>Custom workouts</h2>';
   h += '<div class="sub">' + (workoutMode === 'travel' ? 'Travel' : 'Gym') + ' mode — each mode keeps its own.</div>';
+  h += '<button class="btn btn-primary" onclick="newCustomWorkout()">+ New custom workout</button>';
   if (!names.length){
-    h += '<div class="rule">None yet. Open any workout day, set up the exercises you want, '
-       + 'then tap <b>Save as custom workout</b>.</div>';
+    h += '<div class="rule">None yet. Tap <b>New custom workout</b> above to build one from a blank list, '
+       + 'or set up any workout day and tap <b>Save as custom workout</b> to keep it.</div>';
   } else {
     names.forEach((n, i) => {
       const used = Object.keys(S().dayTypes).filter(ds => S().dayTypes[ds] === n).length;
       h += '<div class="form-group">';
       h += '<label class="form-label" style="color:' + CUSTOM_COLOR + '">' + esc(n) + '</label>';
       h += '<div class="sub">' + ct[n].length + ' exercises · on ' + used + ' day' + (used === 1 ? '' : 's') + '</div>';
+      h += '<button class="btn btn-secondary" onclick="openTemplateEditor(window._ctNames[' + i + '])">Edit exercises</button>';
       h += '<button class="btn btn-secondary" onclick="renameCustomType(' + i + ')">Rename</button>';
       h += '<button class="btn btn-danger" onclick="deleteCustomType(' + i + ')">Delete</button>';
       h += '</div>';
@@ -1951,6 +1953,107 @@ function openCustomTypesModal(){
   h += '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
   document.getElementById('modal').innerHTML = h;
   document.getElementById('modal-overlay').classList.add('show');
+}
+
+// Build a workout from nothing. The alternative — start from an Upper day and
+// delete six exercises — is backwards when the new workout has nothing in
+// common with the templates.
+function newCustomWorkout(){
+  const name = (prompt('Name your new workout\n\ne.g. Conditioning, Legs + Core') || '').trim();
+  if (!name) return;
+  if (RESERVED_TYPES.indexOf(name) !== -1){ toast('That name is reserved'); return; }
+  if (name.length > 24){ toast('Keep the name under 25 characters'); return; }
+  const s = S();
+  s.customTypes = s.customTypes || {};
+  if (s.customTypes[name]){ toast('You already have one called that'); return; }
+  s.customTypes[name] = [];
+  saveState();
+  openTemplateEditor(name);
+}
+
+// Edits the saved template, not a day. Simpler than the day editor because a
+// template has no reps, weights or progression to keep in step — just the
+// exercise, its muscle group and how many sets.
+// The name is held in _ctEditing rather than passed through onclick attributes,
+// since it's user-typed and would need escaping.
+function openTemplateEditor(name){
+  const list = customTypes()[name];
+  if (!list){ toast('That workout no longer exists'); return closeModal(); }
+  window._ctEditing = name;
+  let h = '<h2>' + esc(name) + '</h2>';
+  h += '<div class="sub">' + (workoutMode === 'travel' ? 'Travel' : 'Gym') + ' mode · '
+     + list.length + ' exercise' + (list.length === 1 ? '' : 's') + '</div>';
+  if (!list.length){
+    h += '<div class="rule">Empty so far. Add the exercises you want — this is the list you get '
+       + 'every time you put <b>' + esc(name) + '</b> on a day.</div>';
+  }
+  list.forEach((ex, i) => {
+    h += '<div class="form-group">';
+    h += '<label class="form-label">' + esc(ex.exercise) + '</label>';
+    h += '<div class="sub">' + esc(ex.muscle) + '</div>';
+    h += '<div class="sets-controls">';
+    h += '<button class="sets-btn" onclick="changeTemplateSets(' + i + ',-1)">−</button>';
+    h += '<span class="sets-num">' + ex.sets + ' sets</span>';
+    h += '<button class="sets-btn" onclick="changeTemplateSets(' + i + ',1)">+</button>';
+    h += '<button class="btn btn-danger" onclick="removeFromTemplate(' + i + ')">Remove</button>';
+    h += '</div></div>';
+  });
+  h += '<button class="btn btn-primary" onclick="openAddToTemplate()">+ Add exercise</button>';
+  h += '<button class="btn btn-secondary" onclick="openCustomTypesModal()">Done</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function openAddToTemplate(){
+  const name = window._ctEditing;
+  if (!name || !customTypes()[name]) return closeModal();
+  const groups = Object.keys(getExByGroup()).sort();
+  let h = '<h2>Add to ' + esc(name) + '</h2>';
+  h += '<div class="form-group"><label class="form-label">Muscle Group</label>';
+  h += '<select class="form-select" id="add-group" onchange="updateAddExercises()">'
+     + groups.map(g => '<option value="' + g + '">' + g + '</option>').join('') + '</select></div>';
+  h += '<div class="form-group"><label class="form-label">Exercise</label>';
+  h += '<select class="form-select" id="add-exercise"></select></div>';
+  h += '<div class="form-group"><label class="form-label">Sets</label><div class="sets-controls">';
+  h += '<button class="sets-btn" onclick="modAddSets(-1)">−</button>';
+  h += '<span class="sets-num" id="add-sets-num">3</span>';
+  h += '<button class="sets-btn" onclick="modAddSets(1)">+</button></div></div>';
+  h += '<button class="btn btn-primary" onclick="doAddToTemplate()">Add</button>';
+  h += '<button class="btn btn-secondary" onclick="openTemplateEditor(window._ctEditing)">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+  updateAddExercises();
+  window._addSets = 3;
+}
+
+function doAddToTemplate(){
+  const name = window._ctEditing, s = S();
+  if (!name || !s.customTypes || !s.customTypes[name]) return;
+  s.customTypes[name].push({
+    muscle:   document.getElementById('add-group').value,
+    exercise: document.getElementById('add-exercise').value,
+    sets:     window._addSets || 3,
+  });
+  saveState();
+  openTemplateEditor(name);
+}
+
+function changeTemplateSets(i, d){
+  const name = window._ctEditing, s = S();
+  const l = s.customTypes && s.customTypes[name];
+  if (!l || !l[i]) return;
+  l[i].sets = Math.max(1, Math.min(6, l[i].sets + d));
+  saveState();
+  openTemplateEditor(name);
+}
+
+function removeFromTemplate(i){
+  const name = window._ctEditing, s = S();
+  const l = s.customTypes && s.customTypes[name];
+  if (!l || !l[i]) return;
+  l.splice(i, 1);
+  saveState();
+  openTemplateEditor(name);
 }
 
 function renameCustomType(i){
