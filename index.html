@@ -271,6 +271,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
     <button class="tool-btn" onclick="exportCSV()">📥 CSV</button>
     <button class="tool-btn" onclick="exportBackup()">💾 Backup</button>
     <button class="tool-btn" onclick="document.getElementById('restore-file').click()">♻️ Restore</button>
+    <button class="tool-btn" id="sync-btn" onclick="openSyncModal()">☁️ Sync</button>
     <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
   </div>
   <div class="view-bar" id="view-bar">
@@ -865,7 +866,9 @@ function saveState(){
       travelProgression: TRAVEL_PROGRESSION,
       store,
     }));
-  } catch(e){ console.error('Save failed', e); toast('⚠️ Could not save — storage may be full'); }
+  } catch(e){ console.error('Save failed', e); toast('⚠️ Could not save — storage may be full'); return; }
+  // Sync is best-effort and debounced; a failure here must never affect saving.
+  try { markSyncDirty(); scheduleSync(); } catch(e){}
 }
 
 const LEGACY_SUNDAY = '2026-06-07';   // week 0, day 0 in the old schema
@@ -1032,7 +1035,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v31 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v32 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1698,6 +1701,231 @@ function importBackup(input){
 }
 
 // ==========================================
+// SUPABASE SYNC
+// ==========================================
+// Offline-first: localStorage stays the source of truth and nothing here ever
+// blocks logging. If the network, the key, or the whole project is unavailable,
+// the app works exactly as it did before sync existed — you just don't sync.
+//
+// The publishable key is public on purpose. Row-level security only returns a
+// row when X-Sync-Key matches it, so the key alone gets an attacker nothing.
+// The sync key is the real secret and lives only in localStorage.
+const SB_URL      = 'https://sqmkjgubujrkxygsukng.supabase.co';
+const SB_KEY      = 'sb_publishable_m6cjgKCi9ZwPUnlJWTUb3A_lGp67uNa';
+const SYNC_KEY_LS = 'caprica_workout_sync_key';    // the shared secret
+const SYNC_META_LS= 'caprica_workout_sync_meta';   // {syncedAt, dirty, lastSync}
+
+function syncKey(){ try { return localStorage.getItem(SYNC_KEY_LS) || ''; } catch(e){ return ''; } }
+function setSyncKeyValue(k){ try { localStorage.setItem(SYNC_KEY_LS, k); } catch(e){} }
+function syncMeta(){ try { return JSON.parse(localStorage.getItem(SYNC_META_LS) || '{}'); } catch(e){ return {}; } }
+function setSyncMeta(m){ try { localStorage.setItem(SYNC_META_LS, JSON.stringify(m)); } catch(e){} }
+
+function newSyncKey(){
+  const b = new Uint8Array(24);
+  (crypto || window.crypto).getRandomValues(b);
+  return 'bw-' + Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('');
+}
+
+let syncState = { status:'idle', detail:'' };
+function setSyncStatus(status, detail){
+  syncState = { status, detail: detail || '' };
+  const b = document.getElementById('sync-btn');
+  if (b) b.textContent = ({ idle:'☁️ Sync', syncing:'⏳ Sync', ok:'✅ Sync',
+                            offline:'📴 Sync', error:'⚠️ Sync', conflict:'⚠️ Sync' })[status] || '☁️ Sync';
+}
+
+function sbReq(path, opts){
+  const o = opts || {};
+  return fetch(SB_URL + '/rest/v1/' + path, Object.assign({}, o, {
+    headers: Object.assign({
+      apikey: SB_KEY,
+      Authorization: 'Bearer ' + SB_KEY,
+      'X-Sync-Key': syncKey(),
+    }, o.headers || {})
+  }));
+}
+
+function localBlob(){
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch(e){ return null; }
+}
+
+async function sbGetRow(){
+  const r = await sbReq('workout_state?select=data,updated_at&limit=1');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const rows = await r.json();
+  return rows[0] || null;
+}
+
+// Compare-and-swap: the PATCH is filtered on the updated_at we last saw, so if
+// another device wrote in between, zero rows match and we detect it instead of
+// clobbering. This is the whole conflict-safety mechanism — don't drop the
+// updated_at filter to "simplify" the query.
+async function sbPush(expectedUpdatedAt){
+  const blob = localBlob();
+  if (!blob) return { skipped:true };
+  const common = { headers:{ 'Content-Type':'application/json', Prefer:'return=representation' } };
+  if (!expectedUpdatedAt){
+    const r = await sbReq('workout_state', Object.assign({ method:'POST',
+      body: JSON.stringify({ sync_key: syncKey(), data: blob, device_note: (navigator.userAgent||'').slice(0,60) })
+    }, common));
+    if (r.status === 409) return { conflict:true };
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return { row: (await r.json())[0] };
+  }
+  const r = await sbReq('workout_state?sync_key=eq.' + encodeURIComponent(syncKey())
+                        + '&updated_at=eq.' + encodeURIComponent(expectedUpdatedAt),
+    Object.assign({ method:'PATCH', body: JSON.stringify({ data: blob }) }, common));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const rows = await r.json();
+  return rows.length ? { row: rows[0] } : { conflict:true };
+}
+
+function applyRemote(remote){
+  try {
+    localStorage.setItem(LS_KEY + '_pre_restore', localStorage.getItem(LS_KEY) || '');
+    localStorage.setItem(LS_KEY, JSON.stringify(remote.data));
+  } catch(e){ setSyncStatus('error','could not write'); return; }
+  setSyncMeta({ syncedAt: remote.updated_at, dirty:false, lastSync: new Date().toISOString() });
+  location.reload();   // same reason as importBackup — see that comment
+}
+
+let syncBusy = false, syncTimer = null;
+
+function markSyncDirty(){
+  if (!syncKey()) return;
+  const m = syncMeta();
+  if (!m.dirty){ m.dirty = true; setSyncMeta(m); }
+}
+
+function scheduleSync(){
+  if (!syncKey()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { syncNow(true); }, 3000);
+}
+
+async function syncNow(silent){
+  if (!syncKey()){ if (!silent) toast('Set up sync first'); return; }
+  if (syncBusy) return;
+  if (navigator.onLine === false){ setSyncStatus('offline'); if (!silent) toast('📴 Offline'); return; }
+  syncBusy = true; setSyncStatus('syncing');
+  try {
+    const meta = syncMeta();
+    const remote = await sbGetRow();
+
+    if (!remote){                                        // first device to sync
+      const res = await sbPush(null);
+      if (res.conflict){ syncBusy = false; return syncNow(silent); }
+      if (!res.skipped) setSyncMeta({ syncedAt: res.row.updated_at, dirty:false, lastSync:new Date().toISOString() });
+    } else if (remote.updated_at === meta.syncedAt){      // server unchanged since we last saw it
+      if (meta.dirty){
+        const res = await sbPush(remote.updated_at);
+        if (res.conflict){ setSyncStatus('conflict'); syncBusy = false; return openConflictModal(remote); }
+        setSyncMeta({ syncedAt: res.row.updated_at, dirty:false, lastSync:new Date().toISOString() });
+      } else {
+        setSyncMeta(Object.assign(meta, { lastSync:new Date().toISOString() }));
+      }
+    } else {                                              // server moved on
+      if (!meta.dirty){ applyRemote(remote); return; }
+      setSyncStatus('conflict'); syncBusy = false; return openConflictModal(remote);
+    }
+    setSyncStatus('ok');
+    if (!silent) toast('✅ Synced');
+  } catch(e){
+    setSyncStatus('error', e.message);
+    if (!silent) toast('⚠️ Sync failed — ' + e.message);
+  } finally { syncBusy = false; }
+}
+
+function countWorkouts(blob){
+  let n = 0;
+  ['gym','travel'].forEach(m => {
+    const log = ((blob && blob.store && blob.store[m]) || {}).sessionLog || {};
+    Object.keys(log).forEach(ds => {
+      const d = log[ds] || {};
+      if (Object.keys(d).some(k => { const e=d[k]||{}; return e.done || (e.reps||[]).some(r => r!==undefined && r!==null && r!==''); })) n++;
+    });
+  });
+  return n;
+}
+
+// Both sides changed since the last sync. Never pick for the user — whichever
+// way this goes, somebody's logged sets stop being the live copy.
+function openConflictModal(remote){
+  const mine = countWorkouts(localBlob()), theirs = countWorkouts(remote.data);
+  let h = '<h2>⚠️ Sync conflict</h2>';
+  h += '<div class="sub">Both this device and another device changed since the last sync. Nothing has been overwritten.</div>';
+  h += '<div class="rule">This device: <b>' + mine + '</b> logged workouts<br>'
+     + 'Other device: <b>' + theirs + '</b> logged workouts (saved ' + new Date(remote.updated_at).toLocaleString() + ')</div>';
+  h += '<div class="prev-note">Whichever you discard is kept as a one-time safety copy on this device.</div>';
+  h += '<button class="btn btn-secondary" onclick="resolveConflict(\'mine\')">Keep this device\'s version</button>';
+  h += '<button class="btn btn-secondary" onclick="resolveConflict(\'theirs\')">Use the other device\'s version</button>';
+  h += '<button class="btn" onclick="closeModal()">Decide later</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+  window._conflictRemote = remote;
+}
+
+async function resolveConflict(which){
+  const remote = window._conflictRemote;
+  if (!remote) return closeModal();
+  closeModal();
+  if (which === 'theirs'){ applyRemote(remote); return; }
+  try {
+    setSyncStatus('syncing');
+    const res = await sbPush(remote.updated_at);        // overwrite the server copy
+    if (res.conflict){ toast('⚠️ Changed again — try Sync once more'); setSyncStatus('conflict'); return; }
+    setSyncMeta({ syncedAt: res.row.updated_at, dirty:false, lastSync:new Date().toISOString() });
+    setSyncStatus('ok'); toast('✅ This device kept');
+  } catch(e){ setSyncStatus('error', e.message); toast('⚠️ Sync failed'); }
+}
+
+function openSyncModal(){
+  const k = syncKey(), m = syncMeta();
+  let h = '<h2>☁️ Sync</h2>';
+  if (!k){
+    h += '<div class="sub">Not set up on this device.</div>';
+    h += '<div class="rule">On your <b>first</b> device, create a sync code. On any other device, paste that same code here — that is what links them.</div>';
+    h += '<button class="btn btn-secondary" onclick="setupSyncNew()">Create a sync code</button>';
+    h += '<div class="form-group"><label class="form-label">…or paste an existing code</label>'
+       + '<input class="form-select" id="sync-key-input" placeholder="bw-…"></div>';
+    h += '<button class="btn btn-secondary" onclick="setupSyncExisting()">Link this device</button>';
+  } else {
+    const last = m.lastSync ? new Date(m.lastSync).toLocaleString() : 'never';
+    const stale = m.lastSync && (Date.now() - new Date(m.lastSync).getTime()) > 7*864e5;
+    h += '<div class="sub">Last synced: ' + last + (stale ? ' — that is over a week ago' : '') + '</div>';
+    if (syncState.status === 'error') h += '<div class="prev-note">Last attempt failed: ' + esc(syncState.detail) + '</div>';
+    h += '<div class="rule">Unsynced changes on this device: <b>' + (m.dirty ? 'yes' : 'no') + '</b></div>';
+    h += '<div class="form-group"><label class="form-label">Sync code (same on every device)</label>'
+       + '<input class="form-select" id="sync-key-show" value="' + esc(k) + '" readonly onclick="this.select()"></div>';
+    h += '<button class="btn btn-secondary" onclick="closeModal(); syncNow(false)">Sync now</button>';
+    h += '<button class="btn btn-danger" onclick="unlinkSync()">Unlink this device</button>';
+  }
+  h += '<button class="btn" onclick="closeModal()">Close</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function setupSyncNew(){
+  setSyncKeyValue(newSyncKey());
+  setSyncMeta({ dirty:true });
+  closeModal(); openSyncModal();
+  syncNow(false);
+}
+function setupSyncExisting(){
+  const v = (document.getElementById('sync-key-input').value || '').trim();
+  if (v.length < 20){ toast('⚠️ That code looks too short'); return; }
+  setSyncKeyValue(v);
+  setSyncMeta({ dirty:false });        // pull theirs rather than push ours
+  closeModal();
+  syncNow(false);
+}
+function unlinkSync(){
+  if (!confirm('Stop syncing this device?\n\nYour workouts stay on this device and on the server. Nothing is deleted.')) return;
+  try { localStorage.removeItem(SYNC_KEY_LS); localStorage.removeItem(SYNC_META_LS); } catch(e){}
+  setSyncStatus('idle'); closeModal(); toast('Sync unlinked');
+}
+
+// ==========================================
 // TOAST
 // ==========================================
 function toast(msg){
@@ -1752,6 +1980,12 @@ loadState();
 document.querySelectorAll('.mode-seg').forEach(b => b.classList.toggle('active', b.dataset.mode === workoutMode));
 document.querySelectorAll('.view-seg').forEach(b => b.classList.toggle('active', b.dataset.view === viewState.mode));
 render();
+
+if (syncKey()){
+  setSyncStatus('idle');
+  syncNow(true);                                   // pull anything newer on open
+  window.addEventListener('online', () => syncNow(true));
+}
 
 if ('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg => {
