@@ -156,6 +156,8 @@ $s = Get-Content index.html -Raw; $a = $s.IndexOf('<script>') + 8; $b = $s.Index
 
 Note `.Split('<script>')` does **not** work in PowerShell — `String.Split(string)` splits on each character in that string, not the whole token. Use `IndexOf`/`Substring` as above.
 
+⚠️ **Never round-trip `index.html` through `Get-Content` → `Set-Content`.** PowerShell 5.1 reads as the ANSI codepage and writes UTF-8-with-BOM, which turns every emoji and `·` in the file into mojibake (`🏋️` → `ðŸ‹ï¸`) and prepends a BOM — a whole-file corruption from what looks like a simple find-and-replace. It happened on 2026-08-08 and needed `git checkout -- index.html` to undo. Use the Edit tool for edits; if you must script it, `[System.IO.File]::ReadAllText` / `WriteAllText` with `UTF8Encoding($false)`. Check with `git diff --stat` — a bulk edit touching far more lines than you changed means you've corrupted the encoding.
+
 **Node is installed** — v24.19.0 at `C:\Program Files\nodejs\`, added 2026-08-06 via `winget install OpenJS.NodeJS.LTS`. The command above was verified end-to-end that day: it passes on the real `index.html` and correctly fails a deliberately broken file with a `SyntaxError`. **Python is not needed and never was** — it was only slicing out the script block, which the PowerShell line now does. `python`/`python3` on this machine are still Microsoft Store placeholder shortcuts, not real interpreters; ignore them.
 
 **Two Windows gotchas when handing William a command:** his shell is Windows PowerShell 5.1, where `&&` is a parse error (`The token '&&' is not a valid statement separator`) — chain with `;` instead. And a freshly installed tool won't be on an already-running shell's PATH; refresh with
@@ -180,7 +182,15 @@ Two invariants, both easy to break with a "simplification":
 
 Conflicts are never resolved automatically: `openConflictModal()` shows the workout counts on both sides and the user picks. The discarded side is kept in `_pre_restore`.
 
-### 13. Test the logic headlessly before deploying
+### 13. Custom workouts are not part of the rotation
+
+`store[mode].customTypes` maps a user-typed name to an exercise list. They appear in the day picker beside Upper/Lower/Arms and can go on any day, but they are **not** in `ROTATION`.
+
+That matters because `nextType()` returns `'Upper'` for anything it doesn't recognise. Feeding it a custom type would silently reset the cycle — the exact desync v28 removed. So every rotation decision is guarded by **`isRotationType()`**: the anchor scan in `projection()` skips custom days, and the forward walk sets `gap = 1` for them without advancing `t`. Net effect: a custom day occupies its slot and pushes the next workout out by the usual spacing, but Upper → Lower → Arms continues in order around it.
+
+Custom types have no A/B variant — `templateFor()` returns their list directly. Labels and colours go through `typeLabel()` / `typeColor()`, which fall back to the name and `CUSTOM_COLOR`; **never index `TYPE_LABEL`/`TYPE_COLOR` directly** or custom days render blank. Deleting a type freezes its exercise list onto any day using it first, the same trap as unpinning a logged day.
+
+### 14. Test the logic headlessly before deploying
 
 The sandbox has no npm registry access, so jsdom isn't available. The v28 work used a hand-rolled stub instead — fake `localStorage`, a `document.getElementById` that returns objects recording `innerHTML`, then `eval` the extracted script and assert against the returned HTML strings. That caught real bugs (the v27 `renderMonth` `centerMonday` ReferenceError among them) without a browser.
 
@@ -222,7 +232,17 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `d6665b7` (2026-08-08).** Before writing new entries, run `git log d6665b7..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `16bbd9f` (2026-08-08).** Before writing new entries, run `git log 16bbd9f..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — custom workouts (`sw.js` → v33, app label → v33).**
+
+  Named, reusable exercise lists that sit alongside Upper/Lower/Arms. Build a day however you like, then **Save as custom workout** in the day modal — it reuses the existing per-day exercise editing rather than adding a second exercise picker. **Manage custom workouts** renames and deletes. Stored per mode in `store[mode].customTypes`, so they ride along with backup, restore and sync for free.
+
+  They deliberately don't join the rotation — see Rule #13 for the `isRotationType()` guard that keeps `nextType()` from resetting the cycle. Verified: inserting a custom day preserved the order `Lower > Arms > Upper > Lower > Arms` and only shifted the dates out by the normal spacing; with a custom day in the past the anchor still resolved to the last real rotation workout.
+
+  **Also fixed a latent sync hazard in `loadState()`.** It whitelisted the five known store keys, so a device on an older build would drop anything newer, then save it back without it and push that loss to every other device. It now preserves unknown keys. Verified a synthetic future key survives load, re-save and backup. This mattered immediately — `customTypes` is exactly such a key, and v32 clients would have deleted it.
+
+  Two self-inflicted problems worth recording. A PowerShell find-and-replace corrupted every emoji in `index.html` and added a BOM; reverted with `git checkout` and redone through the Edit tool — see Rule #11. And the same bulk replace rewrote `TYPE_LABEL[t]` *inside* the new `typeLabel()` helper, making it call itself; caught by a stack-overflow in testing.
 
 - **2026-08-08 — keep-alive for the free Supabase project (no app change, no `sw.js` bump).**
 
