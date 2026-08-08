@@ -44,8 +44,17 @@ No `package.json`, no bundler, no CI. Edit `index.html` directly.
 - **If a tool reports a file or commit missing that you're sure exists, suspect your own sandbox before the filesystem.** On 2026-08-06 a Bash-based listing returned this repo one commit behind and reported `CLAUDE.md` as nonexistent; PowerShell read it correctly at the same moment. That was a stale sandbox snapshot, not OneDrive. Cross-check with PowerShell (`Get-ChildItem -Force`, `git ls-files`) before concluding anything is absent — and don't write the absence up as fact until you have.
 - **The one real risk is `.git/index.lock` going stale** if OneDrive touches `.git` mid-operation. Happened once (2026-08-06). If commits start failing, look for a 0-byte lock file with no git process holding it, and delete it. That's the whole mitigation.
 
+**Supabase** (sync backend, added 2026-08-08)
+- Project ref: `sqmkjgubujrkxygsukng` · URL `https://sqmkjgubujrkxygsukng.supabase.co`
+- **Separate free-plan org**, not the Pro org holding the safety-forms project. The existing Supabase MCP connector is scoped to the Pro org and **cannot see this project** — schema changes go through the dashboard SQL Editor unless that's re-authorised. `.mcp.json` in this repo points at it for whenever it is.
+- Free plan means it **pauses after ~7 days of low activity**. Design assumes this: a paused backend costs sync, never data.
+- One table, `public.workout_state` — `sync_key` (PK), `data` (jsonb), `updated_at`, `device_note`. RLS returns a row only when the `X-Sync-Key` header matches `sync_key`; no delete policy; check constraints cap the key at 20–100 chars and the payload under 2MB.
+- The publishable key is in `index.html` **on purpose** — it's public by design and useless without a sync key.
+
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
+- `caprica_workout_sync_key` — the shared secret linking devices. **Never synced and never in the repo**; it's the only thing protecting the row. Same value typed on every device.
+- `caprica_workout_sync_meta` — `{syncedAt, dirty, lastSync}`. `syncedAt` is the server `updated_at` we last agreed with; `dirty` means this device has changes the server hasn't got.
 - `caprica_workout_v2_pre_restore` — written by **Restore** before it overwrites anything, so a wrong file picked on the wrong device is recoverable. Overwritten on each restore; it is a single undo step, not a history.
 - `caprica_workout_v2_v3_backup` — one-time snapshot of the pre-v28 blob, written during migration. Safe to leave forever; it's small and it's the only copy of the old shape. **Searching the source for this key finds nothing** — it's built as `LS_KEY + '_v3_backup'` at the migration branch in `loadState()`. It exists; don't delete it as dead code on the strength of a failed grep.
 
@@ -161,7 +170,17 @@ python3 -c "s=open('index.html',encoding='utf-8').read(); open('/tmp/chk.js','w'
 node --check /tmp/chk.js
 ```
 
-### 12. Test the logic headlessly before deploying
+### 12. Sync never blocks logging, and never overwrites blind
+
+Two invariants, both easy to break with a "simplification":
+
+**`localStorage` is the source of truth.** Every network call is wrapped so a dead network, an expired key, or a paused project degrades to *no sync* — never to a failed save. `saveState()` calls `markSyncDirty()` / `scheduleSync()` inside their own `try`, after the write has already succeeded. Don't move sync ahead of the write, and don't `await` it there.
+
+**The push is a compare-and-swap.** `sbPush()` filters the `PATCH` on the `updated_at` it expects (`&updated_at=eq.…`). If another device wrote in between, zero rows match and we detect a conflict instead of clobbering. **Deleting that filter would silently lose whichever device synced second** — it looks like a redundant query param and it is not. `dirty` stays set on failure so the change retries.
+
+Conflicts are never resolved automatically: `openConflictModal()` shows the workout counts on both sides and the user picks. The discarded side is kept in `_pre_restore`.
+
+### 13. Test the logic headlessly before deploying
 
 The sandbox has no npm registry access, so jsdom isn't available. The v28 work used a hand-rolled stub instead — fake `localStorage`, a `document.getElementById` that returns objects recording `innerHTML`, then `eval` the extracted script and assert against the returned HTML strings. That caught real bugs (the v27 `renderMonth` `centerMonday` ReferenceError among them) without a browser.
 
@@ -183,7 +202,8 @@ If the script block has a syntax error the whole file fails to parse and every g
 - **Light-dumbbell rounding** — see Rule #6.
 - **Rep ranges aren't editable in the UI.** `range` and `top` are baked into `PROGRESSION`. Changing what counts as a completed set means editing the source.
 - ~~No data export/import beyond CSV.~~ **Resolved 2026-08-08** — 💾 Backup / ♻️ Restore move the whole state as a JSON file. Still no automatic sync: `localStorage` is per-device, so the file *is* the transfer mechanism and moving it is a manual step.
-- **No automatic cross-device sync.** Logging on two devices builds two independent histories that will drift, because each device's rotation keys off what *it* has seen completed. Treat one device as authoritative. Supabase was costed on 2026-08-08 (William's org is Pro; a project there is $10/mo, or free in a separate Free-plan org — but free projects pause after 7 days of low activity, which a 3×/week app would regularly trip). Not built; backup/restore was judged sufficient first.
+- ~~No automatic cross-device sync.~~ **Built 2026-08-08** — see Rule #12 and "Where things live".
+- **Free-tier pausing is unmitigated.** Nothing keeps the Supabase project awake yet. After ~7 days of low activity it pauses, sync stops (silently — the app keeps working), and after 90 days paused it can't be restored. A daily GitHub Actions `curl` was designed but not built; it needs no secrets, since querying `workout_state` without a sync header returns `[]`. The app's "last synced" line in the Sync modal is the current early warning.
 - ~~Suspected: `swapExercise` skips the progression rollback.~~ **Confirmed and fixed 2026-08-06** — and `removeExercise` had it too. See Rule #5 and Recent changes.
 
 ---
@@ -201,7 +221,19 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `49fbf90` (2026-08-08).** Before writing new entries, run `git log 49fbf90..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `d0ef8a6` (2026-08-08).** Before writing new entries, run `git log d0ef8a6..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — Supabase sync (`sw.js` → v32, app label → v32).**
+
+  Automatic two-way sync across devices, chosen over manual push/pull because it never silently loses data. `☁️ Sync` in the toolbar: create a sync code on the first device, paste it on the others.
+
+  Pull on open when the server is ahead and this device is clean; debounced push 3s after a save. When both sides have moved, it stops and asks — see Rule #12 for the compare-and-swap that makes that detection reliable, and don't touch it without reading that rule.
+
+  Schema, RLS and constraints were applied by William through the dashboard SQL Editor (the MCP connector can't see this project) and verified from here over HTTP: reading with the publishable key and no sync header returns `[]`; cross-key reads and writes are refused; deletes leave the row; the size and key-length caps reject bad input.
+
+  Sync verified end to end against the live database: round trip preserved workout counts; a stale compare-and-swap was detected instead of overwriting; server-ahead-and-clean pulled; server-ahead-and-dirty prompted and left the server untouched; "keep this device" advanced the server and cleared the dirty flag; with no sync key every entry point no-ops. **Offline: with `fetch` failing outright, logging still saved, the app still rendered, the change stayed pending, and it uploaded once the network returned.**
+
+  Not done: nothing keeps the free project awake. See Open work.
 
 - **2026-08-08 — backup/restore, and stop hiding logged data (`sw.js` → v31, app label → v31).**
 
