@@ -199,7 +199,23 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `fdcec88` (2026-08-06).** Before writing new entries, run `git log fdcec88..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `3c76036` (2026-08-08).** Before writing new entries, run `git log 3c76036..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — repaint on modal close; fixes the swap regression (`sw.js` → v30, app label → v30).**
+
+  **Swapping an exercise looked like it did nothing.** The plan saved correctly, but closing the modal left the old exercise name on screen until some unrelated action happened to redraw. Reproduced on the live site: the list still read the old name while `getPlan()` returned the new one.
+
+  Cause was fix #6 from 2026-08-07 (below). Removing `render()` from `swapExercise` looked like it was deleting a wasted repaint hidden behind the modal — but `closeModal()` only strips a CSS class and never redraws, so nothing repainted the list at all.
+
+  **`closeModal()` now calls `render()`.** This keeps the original intent — one repaint when the modal actually closes, instead of one per modal action behind a covering overlay — while guaranteeing the list is correct when the user sees it again. **Don't remove this `render()`**, and don't put one back in `swapExercise`; the comment on `closeModal` says why.
+
+  Verified: swap now shows the new exercise on close, `removeExercise` still updates, day view survives a close-triggered render, back-to-month works, and closing a modal from the monthly view is fine.
+
+- **2026-08-07 — standalone day view (`sw.js` → v29, app label → v29).**
+
+  New `'day'` view mode: tapping a day opens it on its own page rather than scrolling to it inside the weekly list. `goToDay()` sets `viewState.dayAnchor` and `mode = 'day'`; `renderDayView()` wraps the existing `renderDay()` with a "← Calendar" back bar; `backToMonth()` returns to monthly. The view bar and mode toggle are hidden in day mode and restored on the way back. Rest days get the same treatment with a "Change day" button. Both "Open workout" and the "Next up" card route through it.
+
+  Note `render()` skips scroll restoration in day mode and `updateNavLabels()` returns early — day mode has no week/month nav to label.
 
 - **2026-08-07 — v28 review fixes (six cleanups, `sw.js` → v28).**
 
@@ -215,7 +231,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
   5. **`saveState` now shows a toast on failure** — instead of silently swallowing a full-storage error, it tells the user. The console.error stays (for debugging).
 
-  6. **`swapExercise` no longer calls `render()` before reopening the modal** — it was doing a full-page render that got immediately covered by the modal. Now it just saves and opens the modal, saving a render cycle.
+  6. **`swapExercise` no longer calls `render()` before reopening the modal** — it was doing a full-page render that got immediately covered by the modal. Now it just saves and opens the modal, saving a render cycle. ⚠️ **This one caused a regression — see the 2026-08-08 entry.** The render looked wasted but was the only thing repainting the list underneath.
 
 - **2026-08-06 — progression rollback fix, plus two small cleanups (`sw.js` → v18).**
 
