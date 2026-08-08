@@ -1022,7 +1022,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v29 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v30 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1469,7 +1469,14 @@ function doAddExercise(ds){
   toast('Added: ' + e);
 }
 
-function closeModal(){ document.getElementById('modal-overlay').classList.remove('show'); }
+// Redraw on close, not on every modal action. swapExercise/changeSets mutate the
+// plan while the modal covers the list, so rendering there is wasted work — but
+// something has to repaint it, or the list keeps showing the pre-edit exercise
+// until an unrelated action happens to redraw.
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('show');
+  render();
+}
 
 // ==========================================
 // NOTES
