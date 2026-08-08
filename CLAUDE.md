@@ -46,6 +46,7 @@ No `package.json`, no bundler, no CI. Edit `index.html` directly.
 
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
+- `caprica_workout_v2_pre_restore` — written by **Restore** before it overwrites anything, so a wrong file picked on the wrong device is recoverable. Overwritten on each restore; it is a single undo step, not a history.
 - `caprica_workout_v2_v3_backup` — one-time snapshot of the pre-v28 blob, written during migration. Safe to leave forever; it's small and it's the only copy of the old shape. **Searching the source for this key finds nothing** — it's built as `LS_KEY + '_v3_backup'` at the migration branch in `loadState()`. It exists; don't delete it as dead code on the strength of a failed grep.
 
 ---
@@ -181,7 +182,8 @@ If the script block has a syntax error the whole file fails to parse and every g
 - ~~`manifest.json` description is stale.~~ Fixed 2026-08-06 — now "Upper/Lower/Arms workout tracker. Works offline."
 - **Light-dumbbell rounding** — see Rule #6.
 - **Rep ranges aren't editable in the UI.** `range` and `top` are baked into `PROGRESSION`. Changing what counts as a completed set means editing the source.
-- **No data export/import beyond CSV.** CSV is one-way. If Billy switches phones there's no way to move history across — it's `localStorage`, tied to the origin and the browser profile.
+- ~~No data export/import beyond CSV.~~ **Resolved 2026-08-08** — 💾 Backup / ♻️ Restore move the whole state as a JSON file. Still no automatic sync: `localStorage` is per-device, so the file *is* the transfer mechanism and moving it is a manual step.
+- **No automatic cross-device sync.** Logging on two devices builds two independent histories that will drift, because each device's rotation keys off what *it* has seen completed. Treat one device as authoritative. Supabase was costed on 2026-08-08 (William's org is Pro; a project there is $10/mo, or free in a separate Free-plan org — but free projects pause after 7 days of low activity, which a 3×/week app would regularly trip). Not built; backup/restore was judged sufficient first.
 - ~~Suspected: `swapExercise` skips the progression rollback.~~ **Confirmed and fixed 2026-08-06** — and `removeExercise` had it too. See Rule #5 and Recent changes.
 
 ---
@@ -199,7 +201,21 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `3c76036` (2026-08-08).** Before writing new entries, run `git log 3c76036..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `49fbf90` (2026-08-08).** Before writing new entries, run `git log 49fbf90..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — backup/restore, and stop hiding logged data (`sw.js` → v31, app label → v31).**
+
+  Prompted by William opening the app on his laptop and finding an Arms workout he'd logged on his phone "missing." Nothing was wrong — `localStorage` is per-device and there is no sync — but it surfaced that a lost phone meant a lost training history, with no copy anywhere.
+
+  **💾 Backup / ♻️ Restore.** `exportBackup()` writes the whole `LS_KEY` blob wrapped with `_backup`/`exportedAt` metadata; `importBackup()` accepts that wrapper or a bare state blob, validates it has `store` + `_schemaVersion`, and shows a confirm listing what's in the file *and* what's on the device before overwriting. Restore is destructive, so it first copies the current blob to `caprica_workout_v2_pre_restore`.
+
+  It ends with `location.reload()` rather than re-hydrating in place — deliberate. `loadState()` uses `Object.assign` into the live `PROGRESSION` objects, so a swap without a reload leaves stale exercise keys from the outgoing data. Don't "optimise" the reload away.
+
+  **CSV export was hiding real data.** It skipped any day whose type read `Rest`, but an unpinned day still holds its logged sets — so a day that dropped its pin vanished from the export while its reps sat in storage. Now any day with logged data is exported regardless of type, labelled `Unpinned (has logged data)`.
+
+  **`setDayType(ds,'auto')` now freezes the plan first.** A logged day's plan is usually a template derived from its type; unpinning discarded the type, leaving reps with nothing naming the exercises. It now materialises the plan into `dayPlans` before dropping the pin — but only when the day actually has logged data, so genuine rest days don't accumulate plans. Before this, the rescued CSV rows read `(unknown — plan not stored)`.
+
+  Verified: full round trip (3 logged workouts across gym + travel, wiped, restored, reps and weights identical); junk/CSV/wrong-shape files rejected; both wrapped and bare blobs accepted; unpinned days now export with real exercise names; genuine rest days still excluded; re-pinning restores everything.
 
 - **2026-08-08 — repaint on modal close; fixes the swap regression (`sw.js` → v30, app label → v30).**
 
