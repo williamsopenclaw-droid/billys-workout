@@ -188,6 +188,10 @@ Conflicts are never resolved automatically: `openConflictModal()` shows the work
 
 That matters because `nextType()` returns `'Upper'` for anything it doesn't recognise. Feeding it a custom type would silently reset the cycle — the exact desync v28 removed. So every rotation decision is guarded by **`isRotationType()`**: the anchor scan in `projection()` skips custom days, and the forward walk sets `gap = 1` for them without advancing `t`. Net effect: a custom day occupies its slot and pushes the next workout out by the usual spacing, but Upper → Lower → Arms continues in order around it.
 
+Two ways in: **New custom workout** builds from a blank list via `openTemplateEditor()`, which edits `customTypes[name]` directly and is simpler than the day editor because a template has no reps, weights or progression. **Save as custom workout** keeps a day you've already set up. The editor holds its target in `_ctEditing` rather than passing user-typed names through `onclick` attributes.
+
+Template edits reach days that have no stored `dayPlans[ds]`; a day edited by hand keeps its own copy. Same semantics as the built-in templates.
+
 Custom types have no A/B variant — `templateFor()` returns their list directly. Labels and colours go through `typeLabel()` / `typeColor()`, which fall back to the name and `CUSTOM_COLOR`; **never index `TYPE_LABEL`/`TYPE_COLOR` directly** or custom days render blank. Deleting a type freezes its exercise list onto any day using it first, the same trap as unpinning a logged day.
 
 ### 14. Test the logic headlessly before deploying
@@ -232,7 +236,15 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `16bbd9f` (2026-08-08).** Before writing new entries, run `git log 16bbd9f..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `04fad31` (2026-08-08).** Before writing new entries, run `git log 04fad31..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
+
+  Follow-up to v33: **+ New custom workout** in the manage screen starts from a blank list, and **Edit exercises** reopens any saved one. Previously the only route was to set a day to Upper/Lower/Arms and delete what you didn't want, which is backwards for a workout with nothing in common with the templates.
+
+  `openTemplateEditor()` edits the saved template directly — add, remove, and set counts. It reuses `updateAddExercises()` and `modAddSets()` from the day flow, so the picker is the same one, but keeps its own add/remove rather than reworking the day/session code.
+
+  Verified: creation starts empty, exercises add with the chosen group and set count, sets clamp at 1–6, removal works, and a day set to that workout picks up the list. Edge cases checked — a day set to an *empty* custom workout still renders and opens, and template edits reach untouched days while hand-edited days keep their own copy.
 
 - **2026-08-08 — custom workouts (`sw.js` → v33, app label → v33).**
 
