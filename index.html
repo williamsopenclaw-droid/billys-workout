@@ -269,6 +269,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
   <div class="toolbar">
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">📲 Install App</button>
     <button class="tool-btn" onclick="exportCSV()">📥 CSV</button>
+    <button class="tool-btn" onclick="exportBackup()">💾 Backup</button>
+    <button class="tool-btn" onclick="document.getElementById('restore-file').click()">♻️ Restore</button>
+    <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
   </div>
   <div class="view-bar" id="view-bar">
     <div class="view-toggle" id="view-toggle">
@@ -666,6 +669,13 @@ function isNextUp(ds){ return ds === projection().firstDate; }
 function setDayType(ds, type){
   const dt = S().dayTypes;
   if (type === 'auto'){
+    // Freeze the exercise list before dropping the pin. A logged day's plan is
+    // usually a template derived from its type — unpin it and the type is gone,
+    // so the reps survive with nothing naming the exercises they belong to.
+    if (hasLog(ds) && !S().dayPlans[ds]){
+      const plan = templateFor(ds, dt[ds] !== undefined ? dt[ds] : getDayType(ds));
+      if (plan && plan.length) S().dayPlans[ds] = plan;
+    }
     delete dt[ds];
     if (!hasLog(ds)) delete S().dayPlans[ds];
   } else {
@@ -1022,7 +1032,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v30 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v31 · Rotating 3-Day Split · +10% progression · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1558,14 +1568,25 @@ function exportCSV(){
   const dates = Object.keys(S().sessionLog).concat(Object.keys(S().dayTypes));
   [...new Set(dates)].sort().forEach(ds => {
     const type = getDayType(ds);
-    if (type === 'Rest') return;
-    const plan = getPlan(ds) || [];
+    const logged = hasLog(ds);
+    // A day reading as Rest but still holding logged sets is an unpinned
+    // workout, not a rest day. Exporting on type alone hid real data.
+    if (type === 'Rest' && !logged) return;
+    // getPlan() returns null for Rest, so fall back to a stored plan, then to
+    // whatever indices the session log actually has.
+    const plan = getPlan(ds) || S().dayPlans[ds] || [];
+    const sl = S().sessionLog[ds] || {};
+    const idxs = plan.length ? plan.map((_, i) => i)
+                             : Object.keys(sl).map(Number).sort((a, b) => a - b);
     const dn = S().dayNotes[ds] || '';
-    plan.forEach((ex, i) => {
+    const label = (type === 'Rest' && logged) ? 'Unpinned (has logged data)' : type;
+    idxs.forEach(i => {
+      const ex = plan[i] || {};
       const s = peekSession(ds, i) || {};
       const r = s.reps || [];
-      rows.push([ds, DAY_NAMES[dowOf(ds)], type, blockInfo(ds).variant, ex.exercise, ex.muscle,
-        s.weight || getWeight(ds, i, ex.exercise),
+      rows.push([ds, DAY_NAMES[dowOf(ds)], label, blockInfo(ds).variant,
+        ex.exercise || '(unknown — plan not stored)', ex.muscle || '',
+        s.weight || (ex.exercise ? getWeight(ds, i, ex.exercise) : ''),
         r[0] ?? '', r[1] ?? '', r[2] ?? '', r[3] ?? '', r[4] ?? '', r[5] ?? '',
         s.done ? 'Yes' : '', s.progressed ? 'Yes' : '', dn,
         (S().exNotes[ds] && S().exNotes[ds][i]) || '']);
@@ -1579,6 +1600,101 @@ function exportCSV(){
   a.click();
   URL.revokeObjectURL(url);
   toast('CSV downloaded!');
+}
+
+// ==========================================
+// BACKUP / RESTORE
+// ==========================================
+// CSV is a report, not a backup — it's lossy and one-way. These two move the
+// whole state between devices, and are the only way Billy's history survives a
+// lost phone. Both modes (gym + travel) travel together; localStorage is
+// per-device with no sync, so this file IS the transfer mechanism.
+const BACKUP_TAG = 'billys-workout';
+const RESTORE_SAFETY_KEY = LS_KEY + '_pre_restore';
+
+function exportBackup(){
+  let raw;
+  try { raw = localStorage.getItem(LS_KEY); } catch(e){ raw = null; }
+  if (!raw){ toast('Nothing to back up yet'); return; }
+  let data;
+  try { data = JSON.parse(raw); } catch(e){ toast('⚠️ Saved data is unreadable'); return; }
+
+  const payload = {
+    _backup: BACKUP_TAG,
+    _backupVersion: 1,
+    exportedAt: new Date().toISOString(),
+    appVersion: 'v31',
+    data,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'billys-workout-backup-' + todayStr() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Backup saved');
+}
+
+// Counts what's in a blob so the confirm prompt can show real numbers —
+// restoring is destructive and "are you sure?" is useless without them.
+function backupSummary(data){
+  let days = 0, logged = 0;
+  ['gym','travel'].forEach(m => {
+    const s = (data.store && data.store[m]) || {};
+    const log = s.sessionLog || {};
+    Object.keys(log).forEach(ds => {
+      days++;
+      const d = log[ds] || {};
+      if (Object.keys(d).some(k => { const e = d[k]||{}; return e.done || (e.reps||[]).some(r => r !== undefined && r !== null && r !== ''); })) logged++;
+    });
+  });
+  return { days, logged };
+}
+
+function importBackup(input){
+  const file = input.files && input.files[0];
+  input.value = '';                                   // so re-picking the same file fires again
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onerror = () => toast('⚠️ Could not read that file');
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch(e){ toast('⚠️ Not a valid backup file'); return; }
+
+    // Accept the wrapped export, or a bare state blob pasted straight out of storage.
+    const data = (parsed && parsed._backup === BACKUP_TAG && parsed.data) ? parsed.data : parsed;
+    if (!data || typeof data !== 'object' || !data.store || !data._schemaVersion){
+      toast('⚠️ That file is not a Billy\'s Workout backup');
+      return;
+    }
+
+    const incoming = backupSummary(data);
+    const current  = backupSummary({ store });
+    const when = parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleString() : 'unknown date';
+    const ok = confirm(
+      'Restore this backup?\n\n' +
+      'From: ' + when + '\n' +
+      'Contains: ' + incoming.logged + ' logged workouts across ' + incoming.days + ' days\n\n' +
+      'This REPLACES everything on this device (' + current.logged + ' logged workouts).\n' +
+      'Your current data is kept as a one-time safety copy in case this was a mistake.'
+    );
+    if (!ok){ toast('Restore cancelled'); return; }
+
+    try {
+      const existing = localStorage.getItem(LS_KEY);
+      if (existing) localStorage.setItem(RESTORE_SAFETY_KEY, existing);
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
+    } catch(e){
+      toast('⚠️ Restore failed — storage may be full');
+      return;
+    }
+    // Reload rather than re-hydrating in place: loadState() merges into the
+    // live PROGRESSION objects, so stale keys would survive a partial swap.
+    location.reload();
+  };
+  reader.readAsText(file);
 }
 
 // ==========================================
