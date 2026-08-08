@@ -203,7 +203,8 @@ If the script block has a syntax error the whole file fails to parse and every g
 - **Rep ranges aren't editable in the UI.** `range` and `top` are baked into `PROGRESSION`. Changing what counts as a completed set means editing the source.
 - ~~No data export/import beyond CSV.~~ **Resolved 2026-08-08** — 💾 Backup / ♻️ Restore move the whole state as a JSON file. Still no automatic sync: `localStorage` is per-device, so the file *is* the transfer mechanism and moving it is a manual step.
 - ~~No automatic cross-device sync.~~ **Built 2026-08-08** — see Rule #12 and "Where things live".
-- **Free-tier pausing is unmitigated.** Nothing keeps the Supabase project awake yet. After ~7 days of low activity it pauses, sync stops (silently — the app keeps working), and after 90 days paused it can't be restored. A daily GitHub Actions `curl` was designed but not built; it needs no secrets, since querying `workout_state` without a sync header returns `[]`. The app's "last synced" line in the Sync modal is the current early warning.
+- ~~Free-tier pausing is unmitigated.~~ **Handled 2026-08-08** by `.github/workflows/keep-supabase-awake.yml` — see Recent changes.
+- **The keep-alive can itself be switched off.** GitHub disables scheduled workflows after 60 days of *repository* inactivity, so a long quiet spell stops the pinger and then the project pauses anyway. GitHub emails first, and `workflow_dispatch` re-runs it by hand. The Sync panel's "last synced … over a week ago" line is the in-app backstop. Nothing detects this automatically.
 - ~~Suspected: `swapExercise` skips the progression rollback.~~ **Confirmed and fixed 2026-08-06** — and `removeExercise` had it too. See Rule #5 and Recent changes.
 
 ---
@@ -221,7 +222,17 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `d0ef8a6` (2026-08-08).** Before writing new entries, run `git log d0ef8a6..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `d6665b7` (2026-08-08).** Before writing new entries, run `git log d6665b7..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+
+- **2026-08-08 — keep-alive for the free Supabase project (no app change, no `sw.js` bump).**
+
+  `.github/workflows/keep-supabase-awake.yml` runs twice daily and makes three queries against `workout_state`, keeping the project above the Free-plan activity threshold. Sync was confirmed working across William's phone and laptop first — the keep-alive was only worth adding once there was something to keep alive.
+
+  **No secrets.** It sends the publishable key that's already public in `index.html` and deliberately sends *no* `X-Sync-Key`, so RLS returns `[]` every time. Verified by running the script body locally: three 200s and an empty-list body, so nothing of Billy's can reach the workflow logs.
+
+  It distinguishes failure modes rather than just failing: `540` reports the project as paused with the dashboard link and the 90-day deadline, `401/403` points at a rotated key needing updating in two places, and `000` means unreachable.
+
+  One bug caught before it shipped: `[ "$fail" = "1" ] && exit 1` under `set -euo pipefail` aborts the job on a *successful* query, because the false test makes the AND-list return non-zero. Rewritten as an `if`. There's a comment in the file so it doesn't get "tidied" back.
 
 - **2026-08-08 — Supabase sync (`sw.js` → v32, app label → v32).**
 
