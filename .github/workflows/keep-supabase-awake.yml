@@ -1,0 +1,64 @@
+name: keep-supabase-awake
+
+# Supabase pauses Free-plan projects after ~7 days of low database activity.
+# Billy trains 3x/week and takes weeks off, which is comfortably under the bar,
+# so this keeps the project alive by making a few real queries every day.
+#
+# No secrets. The key below is the publishable key, already public in
+# index.html: row-level security only returns a row when an X-Sync-Key header
+# matches it, and this request deliberately sends none. The response is always
+# an empty list, so nothing of Billy's can leak into the workflow logs.
+
+on:
+  schedule:
+    - cron: '17 2 * * *'    # twice daily, off the hour — the top of the hour is
+    - cron: '17 14 * * *'   # heavily contended and gets delayed or dropped
+  workflow_dispatch:         # lets you trigger a run by hand to test it
+
+concurrency:
+  group: keep-supabase-awake
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query Supabase
+        env:
+          SB_URL: https://sqmkjgubujrkxygsukng.supabase.co
+          SB_KEY: sb_publishable_m6cjgKCi9ZwPUnlJWTUb3A_lGp67uNa
+        run: |
+          set -euo pipefail
+          fail=0
+          for i in 1 2 3; do
+            code=$(curl -sS --max-time 30 -o /tmp/out -w '%{http_code}' \
+              -H "apikey: $SB_KEY" \
+              -H "Authorization: Bearer $SB_KEY" \
+              "$SB_URL/rest/v1/workout_state?select=sync_key&limit=1") || code=000
+
+            echo "query $i -> HTTP $code"
+
+            case "$code" in
+              200) : ;;
+              540)
+                echo "::error::Supabase project is PAUSED. Resume it at https://supabase.com/dashboard/project/sqmkjgubujrkxygsukng — sync has been down since it paused, and a paused project is unrecoverable after 90 days."
+                fail=1 ;;
+              401|403)
+                echo "::error::Auth rejected (HTTP $code). The publishable key was probably rotated — update it here and in index.html."
+                fail=1 ;;
+              000)
+                echo "::error::Could not reach Supabase at all (network or DNS)."
+                fail=1 ;;
+              *)
+                echo "::error::Unexpected HTTP $code"
+                cat /tmp/out || true
+                fail=1 ;;
+            esac
+
+            # NB: `[ ... ] && exit 1` would abort the whole job on a *success*
+            # under `set -e`, because the false test makes the AND-list fail.
+            if [ "$fail" = "1" ]; then exit 1; fi
+            sleep 3
+          done
+          echo "Project is awake — 3 successful queries."
