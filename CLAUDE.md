@@ -14,6 +14,20 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 20, 2026 update — v35
+
+Gym now forecasts Monday–Friday from September 21, using separate built-in types `Upper A`, `Lower A`, `Upper B`, `Lower B`. `gymProjection()` skips weekends and carries missed workouts to the next weekday. Existing pinned days (including legacy/custom ones) remain intact; only the new types advance the new cycle. Travel still uses the original every-other-day Upper/Lower/Arms forecast and 10-week A/B blocks.
+
+`GYM_TEMPLATES` contains the cable-free routines and per-plan rep targets/cues. Legacy `TEMPLATES` and the original progression targets remain for history. New lifts have blank working weights or BW; existing lifts retain saved weights. `pinIfNeeded()` freezes new plans before logging so exercise names, ranges and set counts cannot change under existing reps. Custom plan copies preserve this metadata, and swaps clear it to use the replacement exercise's targets.
+
+New routines start at two working sets. From October 5 onward, the calendar offers a recovery-based switch to regular set counts (and back); `store.gym.fullVolumeFrom` only affects untouched plans. This additive field is included by existing save/backup/sync without backend changes.
+
+New gym progression is explicitly confirmed in the exercise modal after all target reps are logged. Default increments: 5 lb for barbells, 2.5 lb for dumbbells, adjustable to match the equipment. Bodyweight does not auto-progress. Existing rep-edit and swap/removal rollback still applies. Legacy sessions and Travel retain the old progression behavior. The older rules below describe those legacy paths where they mention +10%, 10-week blocks, or three-day gym rotation.
+
+Validation: `node tests/workout.test.cjs` checks scheduling, skips, pins, history, v3 migration, Travel, ramp-up, persistence and reversible progression. Browser verification uses a separate localhost origin, never real synced workout data. Syntax-check the full script and bump the service-worker version on deployment as before.
+
+---
+
 ## What this project is
 
 A personal workout tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No backend, no accounts, no network calls at runtime.

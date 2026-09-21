@@ -73,11 +73,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .sheet{background:var(--surface);border-radius:10px;overflow:hidden}
 .sheet-header{display:flex;background:var(--header-bg);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 .sheet-header .col{padding:8px 4px;text-align:center;border-bottom:1px solid var(--border)}
-.col-exercise{width:30%;text-align:left!important;padding-left:10px!important}
-.col-weight{width:16%}
-.col-set{width:12%}
-.col-check{width:5%}
-.col-notes{width:7%}
+.col-exercise{width:var(--exercise-width,30%);text-align:left!important;padding-left:10px}
+.ex-row>.col-exercise{padding-left:0}
+.col-weight{width:var(--weight-width,16%)}
+.col-set{width:var(--set-width,12%)}
+.col-check{width:var(--check-width,5%)}
+.col-notes{width:var(--notes-width,7%)}
 
 .ex-row{display:flex;border-bottom:1px solid rgba(71,85,105,0.3);position:relative}
 .ex-row:last-child{border-bottom:none}
@@ -108,7 +109,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .weight-lbs{font-size:9px;color:var(--muted);display:block;margin-top:-1px}
 
 /* Rep input cells */
-.rep-input{width:34px;height:28px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;text-align:center;font-family:inherit;font-weight:600;-moz-appearance:textfield}
+.rep-input{width:100%;max-width:34px;height:28px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;text-align:center;font-family:inherit;font-weight:600;-moz-appearance:textfield}
 .rep-input::-webkit-inner-spin-button,.rep-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .rep-input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
 .rep-input.filled{background:rgba(56,189,248,0.1);border-color:rgba(56,189,248,0.4)}
@@ -263,7 +264,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 <div class="app" id="app">
   <div class="header">
     <h1>🏋️ Billy's Workout</h1>
-    <p>3-Day Rotation · Upper / Lower / Arms</p>
+    <p>Monday–Friday · Upper / Lower</p>
   </div>
 
   <div class="toolbar">
@@ -353,6 +354,23 @@ const PROGRESSION = {
   "Standing Calf Raise":{group:"Calves",range:"12-15",top:15,weight:"205",reps:0},
 };
 
+// New lifts start blank rather than guessing working weights. Existing lifts
+// keep their saved progression; rep targets belong to the new day plans below.
+Object.assign(PROGRESSION, {
+  'Chin-ups': {group:'Back',range:'5-10',top:10,weight:'BW'},
+  'Dumbbell Bench Press': {group:'Chest',range:'8-12',top:12,weight:''},
+  'Dumbbell Overhead Press': {group:'Shoulders',range:'6-10',top:10,weight:''},
+  'Dumbbell Reverse Lunge': {group:'Quads',range:'8-12 / leg',top:12,weight:''},
+  'Goblet Squat': {group:'Quads',range:'10-15',top:15,weight:''},
+  'Barbell Glute Bridge': {group:'Glutes',range:'8-12',top:12,weight:''},
+  'Sliding Hamstring Curl': {group:'Hamstrings',range:'8-15',top:15,weight:'BW'},
+  'Hamstring Walkout': {group:'Hamstrings',range:'8-15',top:15,weight:'BW'},
+  'Dumbbell Calf Raise': {group:'Calves',range:'12-20',top:20,weight:''},
+  'Overhead Dumbbell Triceps Extension': {group:'Triceps',range:'10-15',top:15,weight:''},
+  'Plank': {group:'Core',range:'20-45 sec',top:45,weight:'BW'},
+  'Dead Bug': {group:'Core',range:'8-12 / side',top:12,weight:'BW'},
+});
+
 const EX_BY_GROUP = {};
 for(const [name,data] of Object.entries(PROGRESSION)){
   const g = data.group;
@@ -426,6 +444,66 @@ const TYPE_LABEL = { Upper:'Upper Body', Lower:'Lower Body', Arms:'Arms / Delts 
 const TYPE_COLOR = { Upper:'#38bdf8', Lower:'#4ade80', Arms:'#a78bfa', Rest:'#475569' };
 const CUSTOM_COLOR = '#f472b6';   // every custom workout shares one colour
 const RESERVED_TYPES = ['Upper','Lower','Arms','Rest','auto'];
+
+// Separate types preserve every old Upper/Lower/Arms workout and its A/B block.
+const GYM_START = '2026-09-21';
+const GYM_ROTATION = ['Upper A','Lower A','Upper B','Lower B'];
+GYM_ROTATION.forEach(t => {
+  TYPE_LABEL[t] = t;
+  TYPE_COLOR[t] = t.startsWith('Upper') ? TYPE_COLOR.Upper : TYPE_COLOR.Lower;
+  RESERVED_TYPES.push(t);
+});
+const gymExercise = (exercise, sets, range, top, increment, cue) => ({
+  muscle:PROGRESSION[exercise].group, exercise, sets, range, top, increment, cue,
+});
+const GYM_TEMPLATES = {
+  'Upper A': [
+    gymExercise('Barbell Bench Press',3,'6-10',10,5,'Use rack safeties. Leave 2–3 reps in reserve.'),
+    gymExercise('Pull-ups (Wide/Neutral)',3,'5-10',10,0,'Bodyweight. Stop 2 reps before failure; fewer reps on later sets are fine.'),
+    gymExercise('Dumbbell Row',2,'8-12 / arm',12,2.5,'Support your free hand. Log reps per arm and weight per dumbbell.'),
+    gymExercise('DB Lateral Raise',2,'12-20',20,2.5,'Controlled reps, no swinging. Weight is per dumbbell.'),
+    gymExercise('Dumbbell Curl',2,'10-15',15,2.5,'Weight is per dumbbell. Keep your upper arms still.'),
+  ],
+  'Lower A': [
+    gymExercise('Barbell Back Squat',3,'6-10',10,5,'Use rack safeties and a comfortable depth.'),
+    gymExercise('Romanian Deadlift',2,'8-12',12,5,'Hinge at the hips. Keep the bar close and control the lowering.'),
+    gymExercise('Dumbbell Reverse Lunge',2,'8-12 / leg',12,2.5,'Log reps per leg and weight per dumbbell. Start with bodyweight if needed.'),
+    gymExercise('Dumbbell Calf Raise',2,'12-20',20,2.5,'Use support for balance. Weight is per dumbbell.'),
+    gymExercise('Plank',2,'20-45 sec',45,0,'Enter seconds in each set. Stop before your position breaks down.'),
+  ],
+  'Upper B': [
+    gymExercise('Dumbbell Overhead Press',2,'6-10',10,2.5,'Weight is per dumbbell. Avoid leaning back.'),
+    gymExercise('Chin-ups',3,'5-10',10,0,'Bodyweight with a comfortable underhand grip. Leave 2 reps in reserve.'),
+    gymExercise('Dumbbell Bench Press',3,'8-12',12,2.5,'Weight is per dumbbell. Dips are an optional comfortable swap.'),
+    gymExercise('Dumbbell Row',2,'8-12 / arm',12,2.5,'Support your free hand. Log reps per arm and weight per dumbbell.'),
+    gymExercise('Overhead Dumbbell Triceps Extension',2,'10-15',15,2.5,'Hold one dumbbell with both hands; log its weight.'),
+  ],
+  'Lower B': [
+    gymExercise('Goblet Squat',3,'10-15',15,2.5,'Hold one dumbbell at your chest; log its weight.'),
+    gymExercise('Barbell Glute Bridge',3,'8-12',12,5,'Upper back on the floor. Pad the bar and avoid overextending your back.'),
+    gymExercise('Sliding Hamstring Curl',2,'8-15',15,0,'Use towels on a smooth floor, or swap to Hamstring Walkout.'),
+    gymExercise('Dumbbell Calf Raise',2,'12-20',20,2.5,'Use support for balance. Weight is per dumbbell.'),
+    gymExercise('Dead Bug',2,'8-12 / side',12,0,'Log reps per side. Move slowly and keep your lower back controlled.'),
+  ],
+};
+function isGymType(t){ return workoutMode === 'gym' && GYM_ROTATION.includes(t) && !customTypes()[t]; }
+function isGymDay(ds){ return isGymType(getDayType(ds)); }
+function gymRamp(ds){ return !S().fullVolumeFrom || ds < S().fullVolumeFrom; }
+function activeRotation(){ return workoutMode === 'gym' ? GYM_ROTATION : ROTATION; }
+function dayProgression(ds, ex){
+  const base = getProgression()[ex.exercise];
+  return base ? Object.assign({}, base, ex.range ? {range:ex.range,top:ex.top} : {}) : null;
+}
+function weightStep(ex){
+  const p = getProgression()[ex.exercise] || {};
+  return Number(p.increment) || ex.increment || (/dumbbell|\bDB\b|goblet/i.test(ex.exercise) ? 2.5 : 5);
+}
+function setFullVolume(enabled){
+  if (workoutMode !== 'gym') return;
+  if (enabled && todayStr() < addDays(GYM_START,14)) { toast('Keep two sets for the first two weeks'); return; }
+  S().fullVolumeFrom = enabled ? todayStr() : null;
+  saveState(); render();
+}
 
 const BLOCK_ANCHOR = '2026-06-07';  // Sunday — start of A/B block counting
 const BLOCK_WEEKS  = 10;            // 10 weeks on A, then 10 weeks on B
@@ -628,6 +706,7 @@ function invalidateProjection(){ _proj = null; }
 function projection(){
   const today = todayStr();
   if (_proj && _proj.mode === workoutMode && _proj.day === today) return _proj;
+  if (workoutMode === 'gym') return gymProjection(today);
 
   const dt = S().dayTypes;
   let lastDate = null, lastType = null;
@@ -673,6 +752,32 @@ function projection(){
   return _proj;
 }
 
+// Weekday-only forecast. A skipped day never advances the four-workout cycle.
+// Explicit rest, legacy or custom workouts occupy their dates without consuming it.
+function gymProjection(today){
+  const dt = S().dayTypes;
+  const dates = Object.keys(dt).filter(d => d >= GYM_START && d <= today && isGymType(dt[d])).sort();
+  const lastDate = dates.length ? dates[dates.length-1] : null;
+  const lastType = lastDate ? dt[lastDate] : null;
+  let idx = lastType ? (GYM_ROTATION.indexOf(lastType)+1)%4 : 0;
+  let d = lastDate ? addDays(lastDate,1) : GYM_START;
+  if (d < today) d = today;
+  const map = {};
+  let firstDate = null, firstType = null;
+  // Keep a pinned workout today visible as the next card, just like future pins.
+  if (dt[today] && dt[today] !== 'Rest' && !hasLog(today)) { firstDate=today; firstType=dt[today]; }
+  for (let i=0; i<PROJECT_DAYS; i++, d=addDays(d,1)){
+    let type = dt[d];
+    if (type !== undefined){
+      if (isGymType(type)) idx = (GYM_ROTATION.indexOf(type)+1)%4;
+    } else if (dowOf(d) !== 0 && dowOf(d) !== 6){
+      type = GYM_ROTATION[idx]; map[d]=type; idx=(idx+1)%4;
+    }
+    if (!firstDate && type && type !== 'Rest'){ firstDate=d; firstType=type; }
+  }
+  return _proj = {mode:workoutMode,day:today,map,firstDate,firstType,anchorDate:lastDate,anchorType:lastType};
+}
+
 function getDayType(ds){
   const dt = S().dayTypes;
   if (dt[ds] !== undefined) return dt[ds];
@@ -705,6 +810,9 @@ function setDayType(ds, type){
 
 // Lock a projected day in place as soon as it's touched, so history is stable.
 function pinIfNeeded(ds){
+  // Snapshot the new routine before pinning, including its ramp-up set count.
+  // Later volume changes must never alter a session already touched.
+  if (isGymDay(ds) && !S().dayPlans[ds]) S().dayPlans[ds] = templateFor(ds,getDayType(ds));
   const dt = S().dayTypes;
   if (dt[ds] === undefined){
     dt[ds] = getDayType(ds);
@@ -718,7 +826,8 @@ function pinIfNeeded(ds){
 function templateFor(ds, type){
   // Custom workouts have a single exercise list — no A/B variant.
   const c = customTypes()[type];
-  if (c) return c.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
+  if (c) return c.map(e => Object.assign({},e));
+  if (isGymType(type)) return GYM_TEMPLATES[type].map(e => Object.assign({},e,{sets:gymRamp(ds) ? 2 : e.sets}));
   const v = getVariant(ds);
   const t = TEMPLATES[workoutMode][v][type];
   return t ? t.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets })) : [];
@@ -784,7 +893,7 @@ function allSetsAtTop(ds, exIdx){
   const plan = getPlan(ds);
   const ex = plan && plan[exIdx];
   if (!ex) return false;
-  const prog = getProgression()[ex.exercise];
+  const prog = dayProgression(ds,ex);
   if (!prog || !prog.top) return false;
   const sess = peekSession(ds, exIdx);
   if (!sess) return false;
@@ -797,12 +906,12 @@ function allSetsAtTop(ds, exIdx){
 
 // Called after any rep edit. Awards or rolls back the bump so the number
 // always reflects what's actually logged.
-function syncProgression(ds, exIdx){
+function syncProgression(ds, exIdx, approved){
   const plan = getPlan(ds);
   const ex = plan && plan[exIdx];
   if (!ex) return null;
   const prog = getProgression()[ex.exercise];
-  if (!prog || !prog.top) return null;
+  if (!prog || !dayProgression(ds,ex).top) return null;
 
   const sess = getSession(ds, exIdx);
   const base = parseFloat(sess.weight || prog.weight);
@@ -811,10 +920,11 @@ function syncProgression(ds, exIdx){
   const met = allSetsAtTop(ds, exIdx);
 
   if (met && !sess.progressed){
+    if (isGymDay(ds) && !approved) return null;
     sess.weight = String(base);                   // pin so history can't shift
     sess.progressed = true;
     sess.progressedFrom = base;
-    prog.weight = bumpWeight(base);
+    prog.weight = isGymDay(ds) ? String(Math.round((base + weightStep(ex))*100)/100) : bumpWeight(base);
     return { dir:'up', exercise:ex.exercise, from:base, to:prog.weight };
   }
   if (!met && sess.progressed){
@@ -824,6 +934,17 @@ function syncProgression(ds, exIdx){
     return { dir:'down', exercise:ex.exercise, to:prog.weight };
   }
   return null;
+}
+
+function approveIncrease(ds,i){
+  if (!isGymDay(ds) || !allSetsAtTop(ds,i)) return;
+  const ex=getPlan(ds)[i], input=document.getElementById('weight-step');
+  const step=Number(input && input.value);
+  if (!Number.isFinite(step) || step<=0 || step>50){ toast('Enter a weight step between 0 and 50 lb'); return; }
+  getProgression()[ex.exercise].increment=step;
+  const result=syncProgression(ds,i,true);
+  saveState(); openExerciseModal(ds,i);
+  if (result) toast('Next time: '+result.to+' lb');
 }
 
 // Roll back an awarded bump when the session that earned it is about to be
@@ -1043,7 +1164,7 @@ function render(){
     const p = projection();
     hp.textContent = p.firstDate
       ? 'Next up: ' + typeLabel(p.firstType) + ' · ' + (p.firstDate === todayStr() ? 'today' : fmtShort(p.firstDate))
-      : '3-Day Rotation · Upper / Lower / Arms';
+      : (workoutMode === 'gym' ? 'Monday–Friday · Upper / Lower' : 'Travel · Upper / Lower / Arms');
   }
   updateNavLabels();
 
@@ -1054,7 +1175,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v34 · Rotating 3-Day Split · +10% progression · '
+  html += '<div class="ver">v35 · ' + (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation') + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1083,7 +1204,7 @@ function renderMonth(){
 
   // Legend
   html += '<div class="legend">';
-  ROTATION.forEach(t => {
+  activeRotation().forEach(t => {
     html += '<span class="lg"><i style="background:' + typeColor(t) + '"></i>' + t + '</span>';
   });
   html += '<span class="lg"><i class="lg-next"></i>Next up</span>';
@@ -1144,8 +1265,18 @@ function renderMonth(){
     html += '</div>';
   }
 
-  const bi = blockInfo(today);
-  html += '<div class="block-note">Exercise block <b>' + bi.variant + '</b> · week ' + bi.week + ' of ' + bi.total + '</div>';
+  if (workoutMode === 'gym'){
+    html += '<div class="rule"><b>Mon–Fri · Upper A → Lower A → Upper B → Lower B</b><br>'
+      + 'Weekends off. Missed workouts move to the next weekday. Starts September 21.<br>'
+      + (gymRamp(today) ? 'Start with 2 working sets per exercise for two weeks.' : 'Regular set counts enabled for new sessions.')
+      + '<br>Leave 2–3 reps in reserve. Rest 2–3 min on main lifts, 60–90 sec on accessories.';
+    if (today >= addDays(GYM_START,14)) html += '<button class="btn btn-secondary" onclick="setFullVolume(' + gymRamp(today) + ')">'
+      + (gymRamp(today) ? 'Recovery feels good — use regular sets' : 'Return to two sets') + '</button>';
+    html += '</div>';
+  } else {
+    const bi = blockInfo(today);
+    html += '<div class="block-note">Exercise block <b>' + bi.variant + '</b> · week ' + bi.week + ' of ' + bi.total + '</div>';
+  }
   html += '<div class="hint">Tap any day to change what it is.</div>';
   return html;
 }
@@ -1208,9 +1339,13 @@ function renderDay(ds, isToday){
   html += ' <button class="mini-btn" onclick="openDayModal(\'' + ds + '\')">edit</button></span>';
   html += '</div>';
 
-  html += '<div class="sheet"><div class="sheet-header">';
-  html += '<div class="col col-exercise">EXERCISE</div><div class="col col-weight">WT</div>';
+  if (isGymDay(ds)) html += '<div class="rule">Working sets only; warm up first. Leave 2–3 reps in reserve.<br>'
+    + 'Rest 2–3 min on main lifts, 60–90 sec on accessories. Tap an exercise for guidance.<br>'
+    + 'Review saved weights before starting. Blank weights need your own starting load.</div>';
   const maxSets = Math.max.apply(null, plan.map(e => e.sets).concat([2]));
+  const widths = maxSets <= 3 ? '--exercise-width:44%;--weight-width:14%;--set-width:' + (28/maxSets) + '%;--check-width:6%;--notes-width:8%' : '';
+  html += '<div class="sheet" style="' + widths + '"><div class="sheet-header">';
+  html += '<div class="col col-exercise">EXERCISE</div><div class="col col-weight">WT</div>';
   for (let s = 1; s <= maxSets; s++) html += '<div class="col col-set">S' + s + '</div>';
   html += '<div class="col col-check">✓</div><div class="col col-notes"></div></div>';
 
@@ -1232,7 +1367,7 @@ function renderDay(ds, isToday){
 }
 
 function renderExRow(ds, ex, i){
-  const prog = getProgression()[ex.exercise];
+  const prog = dayProgression(ds,ex);
   const w    = getWeight(ds, i, ex.exercise);
   const done = isDone(ds, i);
   const sess = peekSession(ds, i);
@@ -1250,12 +1385,12 @@ function renderExRow(ds, ex, i){
        + encodeURIComponent(ex.exercise.replace(/'/g,'') + ' form tutorial')
        + '" target="_blank" onclick="event.stopPropagation()">▶</a></div>';
   html += '<div class="ex-sets-label">' + (prog ? prog.range : '') + ' · ' + ex.sets + ' sets'
-       + (prog && prog.top ? ' · all @' + prog.top + ' = +10%' : '') + '</div>';
+       + (prog && prog.top && !isNaN(parseFloat(w)) ? (isGymDay(ds) ? ' · tap to progress' : ' · all @' + prog.top + ' = +10%') : '') + '</div>';
   html += '</div></div>';
 
   html += '<div class="col col-weight"><div class="cell">';
   html += '<span class="weight-val' + (earned ? ' bumped' : '') + '" contenteditable="true" inputmode="decimal"';
-  html += ' onfocus="this.dataset.prev=this.textContent"';
+  html += ' aria-label="' + esc(ex.exercise) + ' weight" onfocus="this.dataset.prev=this.textContent"';
   html += ' onblur="onWeightBlur(this,\'' + ds + '\',' + i + ',\'' + q(ex.exercise) + '\')"';
   html += ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + (w || '—') + '</span>';
   if (earned && prog) html += '<span class="prev-hint up">→ ' + prog.weight + '</span>';
@@ -1269,12 +1404,14 @@ function renderExRow(ds, ex, i){
     const pr = (prev && prev.reps && prev.reps[s] !== undefined && prev.reps[s] !== null) ? prev.reps[s] : null;
     html += '<div class="col col-set"><div class="cell">';
     html += '<input class="rep-input' + fill + met + '" type="number" min="0" max="99" inputmode="numeric"';
-    html += ' value="' + rv + '" placeholder="—" onfocus="this.select()"';
+    html += ' aria-label="' + esc(ex.exercise) + ' set ' + (s+1) + (ex.exercise === 'Plank' ? ' seconds' : ' reps') + '" value="' + rv + '" placeholder="—" onfocus="this.select()"';
     html += ' onchange="onRepChange(this,\'' + ds + '\',' + i + ',' + s + ')">';
     html += (pr !== null ? '<span class="prev-hint">' + pr + '</span>' : '');
     html += '</div></div>';
   }
 
+  const columns = Math.max(2,...getPlan(ds).map(e => e.sets));
+  for (let s=ex.sets; s<columns; s++) html += '<div class="col col-set"></div>';
   html += '<div class="col col-check"><div class="cell"><span class="check-cell' + (done ? ' done' : '') + '"';
   html += ' onclick="toggleDone(\'' + ds + '\',' + i + ');render()">' + (done ? '✓' : '○') + '</span></div></div>';
 
@@ -1305,10 +1442,10 @@ function openDayModal(ds){
 
   let h = '<h2>' + fmtLong(ds) + '</h2>';
   h += '<div class="sub">Currently: <b style="color:' + typeColor(cur) + '">' + typeLabel(cur) + '</b>'
-     + (pinned ? ' · set by you' : ' · auto') + ' · block ' + bi.variant + '</div>';
+     + (pinned ? ' · pinned' : ' · auto') + (isGymType(cur) ? '' : ' · block ' + bi.variant) + '</div>';
 
   h += '<div class="form-group"><label class="form-label">Make this day</label><div class="type-picker">';
-  ROTATION.concat(Object.keys(customTypes()).sort()).concat(['Rest']).forEach(t => {
+  activeRotation().concat(Object.keys(customTypes()).sort()).concat(['Rest']).forEach(t => {
     const sel = t === cur && pinned ? ' selected' : '';
     h += '<button class="type-chip' + sel + '" style="--tc:' + typeColor(t) + '"'
        + ' onclick="pickDayType(\'' + ds + '\',\'' + t + '\')">' + typeLabel(t) + '</button>';
@@ -1368,7 +1505,7 @@ function onRepChange(input, ds, i, s){
   const res = syncProgression(ds, i);
   saveState();
   render();
-  if (res && res.dir === 'up') toast('💪 ' + res.exercise + ' → ' + res.to + ' next time (+10%)');
+  if (res && res.dir === 'up') toast('💪 ' + res.exercise + ' → ' + res.to + ' next time');
   else if (res && res.dir === 'down') toast('↩ ' + res.exercise + ' back to ' + res.to);
 }
 
@@ -1378,7 +1515,7 @@ function onRepChange(input, ds, i, s){
 function openExerciseModal(ds, i){
   const plan = getPlan(ds);
   const ex = plan[i];
-  const prog = getProgression()[ex.exercise];
+  const prog = dayProgression(ds,ex);
   const swaps = getExByGroup()[ex.muscle] || Object.keys(getProgression());
   const prev = getPreviousStats(ex.exercise, ds, i);
   const q = s => String(s).replace(/'/g, "\\'");
@@ -1386,7 +1523,24 @@ function openExerciseModal(ds, i){
   let h = '<h2>' + esc(ex.exercise) + '</h2>';
   h += '<div class="sub">' + ex.muscle + ' · ' + (prog ? prog.range : '') + ' · ' + ex.sets + ' sets · ' + fmtShort(ds) + '</div>';
 
-  if (prog && prog.top){
+  if (isGymDay(ds)){
+    h += '<div class="rule">' + esc(ex.cue || 'Use controlled reps and leave 2–3 reps in reserve.') + '</div>';
+    const current = getWeight(ds,i,ex.exercise);
+    const sess = peekSession(ds,i);
+    if (Number.isFinite(parseFloat(current))){
+      h += '<div class="sub">Reach the top of the range on every set with good form and 2 reps left. '
+        + 'Then confirm a small increase for next time. Use the smallest step your equipment supports.</div>';
+      if (allSetsAtTop(ds,i) && !(sess && sess.progressed)){
+        h += '<label class="form-label" for="weight-step">Increase by (lb; per dumbbell for paired dumbbells)</label>'
+          + '<input class="form-input" id="weight-step" type="number" min="0.25" max="50" step="0.25" value="' + weightStep(ex) + '">'
+          + '<button class="btn btn-primary" style="margin-top:8px" onclick="approveIncrease(\'' + ds + '\',' + i + ')">Sets felt controlled — increase next time</button>';
+      } else if (sess && sess.progressed){
+        h += '<div class="rule">Next time: <b>' + esc(prog.weight) + ' lb</b>. Editing reps below the target reverses this increase.</div>';
+      }
+    } else {
+      h += '<div class="sub">' + (current === 'BW' ? 'Bodyweight: build controlled reps first. No automatic weight increase.' : 'Tap the weight cell and choose a comfortable starting weight. No starting load is prescribed.') + '</div>';
+    }
+  } else if (prog && prog.top && !isNaN(parseFloat(getWeight(ds,i,ex.exercise)))){
     h += '<div class="rule">Hit <b>' + prog.top + ' reps on all ' + ex.sets + ' sets</b> → weight goes up 10% '
        + '(to the nearest 5 lb) next session.</div>';
   }
@@ -1418,6 +1572,7 @@ function swapExercise(ds, i, name){
   const plan = editPlan(ds);
   revertProgression(ds, i, plan[i] && plan[i].exercise);   // before the name changes
   plan[i].exercise = name;
+  ['range','top','increment','cue'].forEach(k => delete plan[i][k]);
   const p = getProgression()[name];
   if (p) plan[i].muscle = p.group;
   const sess = peekSession(ds, i);
@@ -1588,7 +1743,7 @@ function scrollToToday(){
 // CSV EXPORT
 // ==========================================
 function exportCSV(){
-  const rows = [['Date','Day','Type','Block','Exercise','Muscle','Weight','S1','S2','S3','S4','S5','S6','Done','Earned +10%','Day Notes','Ex Notes']];
+  const rows = [['Date','Day','Type','Block','Exercise','Muscle','Weight','S1','S2','S3','S4','S5','S6','Done','Weight increased','Day Notes','Ex Notes']];
   const dates = Object.keys(S().sessionLog).concat(Object.keys(S().dayTypes));
   [...new Set(dates)].sort().forEach(ds => {
     const type = getDayType(ds);
@@ -1608,7 +1763,7 @@ function exportCSV(){
       const ex = plan[i] || {};
       const s = peekSession(ds, i) || {};
       const r = s.reps || [];
-      rows.push([ds, DAY_NAMES[dowOf(ds)], label, blockInfo(ds).variant,
+      rows.push([ds, DAY_NAMES[dowOf(ds)], label, isGymDay(ds) ? type.slice(-1) : blockInfo(ds).variant,
         ex.exercise || '(unknown — plan not stored)', ex.muscle || '',
         s.weight || (ex.exercise ? getWeight(ds, i, ex.exercise) : ''),
         r[0] ?? '', r[1] ?? '', r[2] ?? '', r[3] ?? '', r[4] ?? '', r[5] ?? '',
@@ -1647,7 +1802,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v31',
+    appVersion: 'v35',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
@@ -1920,7 +2075,7 @@ function saveDayAsCustom(ds){
   s.customTypes = s.customTypes || {};
   const existed = !!s.customTypes[name];
   if (existed && !confirm('"' + name + '" already exists.\n\nReplace its exercise list with this day\'s?')) return;
-  s.customTypes[name] = plan.map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
+  s.customTypes[name] = plan.map(e => Object.assign({},e));
   saveState();
   closeModal();
   toast((existed ? 'Updated ' : 'Saved ') + name);
@@ -2085,7 +2240,7 @@ function deleteCustomType(i){
   // the exercises they belong to.
   days.forEach(ds => {
     if (!s.dayPlans[ds]){
-      const p = (s.customTypes[name] || []).map(e => ({ muscle:e.muscle, exercise:e.exercise, sets:e.sets }));
+      const p = (s.customTypes[name] || []).map(e => Object.assign({},e));
       if (p.length) s.dayPlans[ds] = p;
     }
   });

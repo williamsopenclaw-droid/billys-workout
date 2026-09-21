@@ -1,7 +1,7 @@
 {
   "name": "Billy's Workout",
   "short_name": "Billy's Workout",
-  "description": "Upper/Lower/Arms workout tracker. Works offline.",
+  "description": "Weekday upper/lower workouts, independent travel routines, and offline logging.",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#0f172a",
