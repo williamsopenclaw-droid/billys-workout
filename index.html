@@ -1875,6 +1875,8 @@ function mealCard(meal, ds){
     + '<span>' + Math.round(tm.proteinG) + 'g P</span>'
     + '<span class="food-meal-del" onclick="deleteMeal(\'' + ds + '\',' + (meal.id ? '\'' + meal.id + '\'' : 'null') + ')">×</span></div></div>';
 
+}
+
 function renderFoodToday(){
   const ds = todayStr();
   const totals = foodTotalsForDay(ds);
