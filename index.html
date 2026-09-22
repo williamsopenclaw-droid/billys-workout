@@ -32,6 +32,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .tool-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
 .tool-btn:active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 
+/* Section toggle */
+.section-toggle{display:flex;justify-content:center;margin-bottom:10px}
+.section-toggle-inner{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;gap:0}
+.section-seg{display:flex;align-items:center;gap:6px;padding:9px 16px;border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
+.section-seg.active{background:var(--accent);color:var(--bg);font-weight:700}
+.section-seg:first-child{border-radius:9px 0 0 9px}
+.section-seg:last-child{border-radius:0 9px 9px 0}
+.section-seg:not(.active):active{background:rgba(56,189,248,0.1)}
+
 /* Mode toggle */
 .mode-toggle{display:flex;justify-content:center;margin-bottom:12px}
 .mode-toggle-inner{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;gap:0}
@@ -258,6 +267,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .mini-btn:active{background:var(--accent);color:var(--bg)}
 .ex-row.earned{background:rgba(74,222,128,.05)}
 .prev-hint.up{color:var(--green);font-weight:700;opacity:.9}
+
+/* ===== Food UI (v36) ===== */
+.food-today{margin-bottom:14px}
+.food-progress{background:var(--surface);border-radius:10px;padding:14px;margin-bottom:14px}
+.food-bar{margin-bottom:10px}
+.food-bar-row{display:flex;justify-content:space-between;font-size:12px;color:var(--text);margin-bottom:4px}
+.food-bar-label{color:var(--muted)}.food-bar-val{color:var(--text);font-weight:600}
+.food-bar-track{height:8px;background:var(--card);border-radius:4px;overflow:hidden}
+.food-bar-fill{height:100%;border-radius:4px;transition:width .25s ease}
+.food-remaining{font-size:11px;color:var(--muted);margin-top:6px;text-align:right}
+.food-meals-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.food-meal-card{background:var(--surface);border-radius:8px;padding:10px 12px}
+.food-meal-row{display:flex;justify-content:space-between;margin-bottom:4px}
+.food-meal-name{font-size:14px;font-weight:600}.food-meal-time{font-size:11px;color:var(--muted)}
+.food-meal-stats{display:flex;gap:10px;font-size:11px;color:var(--text);align-items:center}
+.food-meal-del{margin-left:auto;color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+.food-meal-del:active{color:var(--red)}.food-log-btn{margin-top:8px}
+.food-empty{text-align:center;padding:24px 12px;font-size:13px;color:var(--muted);background:var(--surface);border-radius:8px;border:1px dashed var(--border)}
+.food-history{margin-bottom:14px}
+.food-weekly-avg{background:var(--surface);border-radius:10px;padding:16px;margin-bottom:14px;text-align:center}
+.food-weekly-avg .big{font-size:28px;font-weight:700;color:var(--accent)}
+.food-weekly-avg .sub{font-size:11px;color:var(--muted);margin-top:2px}
+.food-day-card{background:var(--surface);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.food-day-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.food-day-name{font-size:13px;font-weight:600}.food-day-pct{font-size:11px;color:var(--accent);font-weight:700}
+.food-day-stats{font-size:11px;color:var(--muted)}
+.food-saved{margin-bottom:14px}
+.food-chip-list{display:flex;flex-direction:column;gap:6px}
+.food-chip{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);width:100%}
+.food-chip:active{background:var(--card);border-color:var(--accent)}
+.food-chip-name{font-size:14px;font-weight:600;margin-bottom:2px}.food-chip-stats{font-size:11px;color:var(--muted)}
+.food-recipes{margin-bottom:14px}.food-recipes-list{display:flex;flex-direction:column;gap:6px}
+.food-recipe-card{background:var(--surface);border-radius:8px;padding:10px 12px}
+.food-recipe-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.food-recipe-name{font-size:14px;font-weight:600}.food-recipe-per{font-size:11px;color:var(--accent);font-weight:700}
+.food-recipe-meta{font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -265,6 +310,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
   <div class="header">
     <h1>🏋️ Billy's Workout</h1>
     <p>Monday–Friday · Upper / Lower</p>
+  </div>
+
+  <div class="section-toggle">
+    <div class="section-toggle-inner" id="section-toggle">
+      <button class="section-seg active" data-section="workout" onclick="switchSection('workout')">🏋️ Workout</button>
+      <button class="section-seg" data-section="food" onclick="switchSection('food')">🥗 Food</button>
+    </div>
   </div>
 
   <div class="toolbar">
@@ -648,7 +700,21 @@ function blankStore(){
 }
 let store = { gym: blankStore(), travel: blankStore() };
 
-let viewState = { mode:'monthly', anchor: todayStr() };
+// ==========================================
+// FOOD (v36)
+// ==========================================
+function blankFood(){
+  return {
+    mealsByDay: {},                                // 'YYYY-MM-DD' -> [meal, ...]
+    goals: { kcal: 2200, proteinG: 160 },          // user-editable daily targets
+    savedMeals: [],                                // one-tap meals (protein shake, etc.)
+    recipes: [],                                   // meal-prep recipes w/ portion math
+    _schemaVersion: 1
+  };
+}
+let food = blankFood();
+
+let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
 function S(){ return store[workoutMode]; }
 function getProgression(){ return workoutMode === 'travel' ? TRAVEL_PROGRESSION : PROGRESSION; }
@@ -999,11 +1065,13 @@ function muscleColor(group){
 function saveState(){
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      _schemaVersion: 4,
+      _schemaVersion: 5,                  // v36: food slice added
       workoutMode,
       progression: PROGRESSION,
       travelProgression: TRAVEL_PROGRESSION,
       store,
+      food,                               // v36: see blankFood() above
+      viewState: { section: viewState.section, foodTab: viewState.foodTab },
     }));
   } catch(e){ console.error('Save failed', e); toast('⚠️ Could not save — storage may be full'); return; }
   // Sync is best-effort and debounced; a failure here must never affect saving.
@@ -1073,6 +1141,12 @@ function loadState(){
   if (data.progression)       Object.assign(PROGRESSION, data.progression);
   if (data.travelProgression) Object.assign(TRAVEL_PROGRESSION, data.travelProgression);
   if (data.workoutMode)       workoutMode = data.workoutMode;
+  if (data.viewState && (data.viewState.section === 'workout' || data.viewState.section === 'food')){
+    viewState.section = data.viewState.section;
+  }
+  if (data.viewState && ['today','history','saved','recipes'].includes(data.viewState.foodTab)){
+    viewState.foodTab = data.viewState.foodTab;
+  }
 
   if ((data._schemaVersion || 0) >= 4 && data.store){
     ['gym','travel'].forEach(m => {
@@ -1090,6 +1164,15 @@ function loadState(){
     try { localStorage.setItem(LS_KEY + '_v3_backup', raw); } catch(e){}
     migrateV3(data);
     saveState();
+  }
+
+  // Food (v36): same preserve-unknown-keys discipline as store above.
+  // If `data.food` is absent, `food` keeps the defaults from blankFood() at module top.
+  if (data.food && typeof data.food === 'object'){
+    const fb = blankFood();
+    Object.keys(fb).forEach(k => { if (data.food[k] && typeof data.food[k] === 'object') fb[k] = data.food[k]; });
+    Object.keys(data.food).forEach(k => { if (!(k in fb)) fb[k] = data.food[k]; });
+    food = fb;
   }
   invalidateProjection();
 }
@@ -1161,25 +1244,31 @@ function render(){
   const y = window.scrollY;
   const hp = document.querySelector('.header p');
   if (hp){
-    const p = projection();
-    hp.textContent = p.firstDate
-      ? 'Next up: ' + typeLabel(p.firstType) + ' · ' + (p.firstDate === todayStr() ? 'today' : fmtShort(p.firstDate))
-      : (workoutMode === 'gym' ? 'Monday–Friday · Upper / Lower' : 'Travel · Upper / Lower / Arms');
+    if (viewState.section === 'food'){
+      hp.textContent = 'Today · ' + fmtShort(todayStr());
+    } else {
+      const p = projection();
+      hp.textContent = p.firstDate
+        ? 'Next up: ' + typeLabel(p.firstType) + ' · ' + (p.firstDate === todayStr() ? 'today' : fmtShort(p.firstDate))
+        : (workoutMode === 'gym' ? 'Monday–Friday · Upper / Lower' : 'Travel · Upper / Lower / Arms');
+    }
   }
   updateNavLabels();
 
   const c = document.getElementById('workout-container');
   let html;
-  if (viewState.mode === 'day'){
+  if (viewState.section === 'food'){
+    html = renderFood();
+  } else if (viewState.mode === 'day'){
     html = renderDayView(viewState.dayAnchor);
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v35 · ' + (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation') + ' · '
+  html += '<div class="ver">v36 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
-  if (viewState.mode !== 'day') window.scrollTo(0, y);
+  if (viewState.section === 'food' || viewState.mode !== 'day') window.scrollTo(0, y);
   updateScrollTodayBtn();
 }
 
@@ -1716,6 +1805,22 @@ function autoResizeExNotes(el){
 // ==========================================
 // MODE SWITCH
 // ==========================================
+// ==========================================
+// SECTION TOGGLE (workout / food)
+// ==========================================
+function switchSection(section){
+  if (section !== 'workout' && section !== 'food') return;
+  viewState.section = section;
+  // Hide workout-only chrome when on Food; mirror the existing goToDay/backToMonth pattern.
+  ['view-bar','mode-toggle'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = section === 'workout' ? '' : 'none';
+  });
+  document.querySelectorAll('.section-seg').forEach(b => b.classList.toggle('active', b.dataset.section === section));
+  saveState();
+  render();
+}
+
 function switchMode(mode){
   workoutMode = mode;
   invalidateProjection();
@@ -1727,6 +1832,161 @@ function switchMode(mode){
 // ==========================================
 // SCROLL TO TODAY
 // ==========================================
+// ==========================================
+// FOOD UI (v36) — RENDER LAYER (pure render, no state mutation)
+// ==========================================
+
+// Pure helpers — recompute totals from items. Stored meal.totals is IGNORED on
+// load (defense: never trust the model's totals). Same pattern as sess.weight.
+function mealMacros(meal){
+  return (meal.items || []).reduce((acc, i) => ({
+    kcal:     acc.kcal     + (Number(i.kcal)     || 0),
+    proteinG: acc.proteinG + (Number(i.proteinG) || 0),
+    carbsG:   acc.carbsG   + (Number(i.carbsG)   || 0),
+    fatG:     acc.fatG     + (Number(i.fatG)     || 0)
+  }), { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+}
+function recipeKcal(r){ return (r.ingredients || []).reduce((s, i) => s + (Number(i.kcal) || 0), 0); }
+function foodTotalsForDay(ds){
+  const meals = (food.mealsByDay && food.mealsByDay[ds]) || [];
+  return meals.reduce((acc, m) => {
+    const mm = mealMacros(m);
+    return {
+      kcal: acc.kcal + mm.kcal, proteinG: acc.proteinG + mm.proteinG,
+      carbsG: acc.carbsG + mm.carbsG,   fatG: acc.fatG + mm.fatG,
+      count: acc.count + 1
+    };
+  }, { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, count: 0 });
+}
+function progressBar(consumed, target, label, color){
+  if (!target || target <= 0) return '';
+  const pct = Math.min(100, Math.round(consumed / target * 100));
+  return '<div class="food-bar"><div class="food-bar-row">'
+    + '<span class="food-bar-label">' + label + '</span>'
+    + '<span class="food-bar-val">' + Math.round(consumed) + ' / ' + target + (color === 'protein' ? ' g' : '') + '</span></div>'
+    + '<div class="food-bar-track"><div class="food-bar-fill" style="width:' + pct + '%;background:var(--' + (color === 'protein' ? 'green' : 'accent') + ')"></div></div></div>';
+}
+function mealCard(meal, ds){
+  const tm = mealMacros(meal);
+  return '<div class="food-meal-card">'
+    + '<div class="food-meal-row"><span class="food-meal-name">' + esc(meal.name || 'Meal') + '</span>'
+    + '<span class="food-meal-time">' + (meal.time || '') + '</span></div>'
+    + '<div class="food-meal-stats"><span>' + Math.round(tm.kcal) + ' kcal</span>'
+    + '<span>' + Math.round(tm.proteinG) + 'g P</span>'
+    + '<span class="food-meal-del" onclick="deleteMeal(\'' + ds + '\',' + (meal.id ? '\'' + meal.id + '\'' : 'null') + ')">×</span></div></div>';
+
+function renderFoodToday(){
+  const ds = todayStr();
+  const totals = foodTotalsForDay(ds);
+  const meals = (food.mealsByDay && food.mealsByDay[ds]) || [];
+  const goals = food.goals || { kcal: 2200, proteinG: 160 };
+  const remaining = Math.max(0, (goals.kcal || 0) - totals.kcal);
+  let h = '<div class="food-today"><div class="food-progress">';
+  h += progressBar(totals.kcal, goals.kcal, 'Calories', 'accent');
+  h += progressBar(totals.proteinG, goals.proteinG, 'Protein', 'protein');
+  h += '<div class="food-remaining">' + Math.round(remaining) + ' kcal remaining</div></div>';
+  if (meals.length === 0){
+    h += '<div class="food-empty">No meals logged yet today. Tap below to log your first meal.</div>';
+  } else {
+    h += '<div class="food-meals-list">';
+    meals.forEach(m => { h += mealCard(m, ds); });
+    h += '</div>';
+  }
+  h += '<button class="btn btn-primary food-log-btn" onclick="openLogMealModal()">+ Log Meal</button></div>';
+  return h;
+}
+
+function renderFoodHistory(){
+  const today = todayStr();
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push({ d: addDays(today, -i), ...foodTotalsForDay(addDays(today, -i)) });
+  const w = days.reduce((a, x) => ({
+    kcal: a.kcal + x.kcal, proteinG: a.proteinG + x.proteinG,
+    daysLogged: a.daysLogged + (x.count > 0 ? 1 : 0)
+  }), { kcal: 0, proteinG: 0, daysLogged: 0 });
+  const denom = Math.max(1, w.daysLogged);
+  const goal = (food.goals || {}).kcal || 2200;
+  let h = '<div class="food-history"><div class="food-weekly-avg">'
+    + '<div class="big">' + Math.round(w.kcal / denom) + ' kcal</div>'
+    + '<div class="sub">avg / day this week (' + w.daysLogged + ' day' + (w.daysLogged === 1 ? '' : 's') + ' with food)</div>'
+    + '<div class="sub">' + Math.round(w.proteinG / denom) + ' g protein avg</div></div>';
+  days.forEach(day => {
+    const pct = goal ? Math.min(100, Math.round(day.kcal / goal * 100)) : 0;
+    h += '<div class="food-day-card"><div class="food-day-row">'
+      + '<span class="food-day-name">' + fmtLong(day.d) + '</span>'
+      + '<span class="food-day-pct">' + pct + '%</span></div>'
+      + '<div class="food-day-stats">' + Math.round(day.kcal) + ' kcal · ' + Math.round(day.proteinG) + 'g P · '
+      + day.count + ' meal' + (day.count === 1 ? '' : 's') + '</div></div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function renderFoodSaved(){
+  let h = '<div class="food-saved">';
+  if (!food.savedMeals || food.savedMeals.length === 0){
+    h += '<div class="food-empty">No saved meals yet. When you log a meal you can save it as a one-tap shortcut.</div>';
+  } else {
+    h += '<div class="food-chip-list">';
+    food.savedMeals.forEach(s => {
+      const t = mealMacros(s);
+      h += '<div class="food-chip" onclick="logSavedMeal(\'' + s.id + '\')">'
+        + '<div class="food-chip-name">' + esc(s.name) + '</div>'
+        + '<div class="food-chip-stats">' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div>';
+    });
+    h += '</div>';
+  }
+  h += '<button class="btn btn-primary" onclick="showAddSavedMeal()" style="margin-top:14px">+ Saved Meal from Recent</button></div>';
+  return h;
+}
+
+function renderFoodRecipes(){
+  let h = '<div class="food-recipes">';
+  if (!food.recipes || food.recipes.length === 0){
+    h += '<div class="food-empty">No recipes yet. Add one to track calories and protein per portion.</div>';
+  } else {
+    h += '<div class="food-recipes-list">';
+    food.recipes.forEach(r => {
+      const per = r.portions > 0 ? Math.round(recipeKcal(r) / r.portions) : 0;
+      h += '<div class="food-recipe-card"><div class="food-recipe-row">'
+        + '<span class="food-recipe-name">' + esc(r.name) + '</span>'
+        + '<span class="food-recipe-per">' + per + ' kcal / portion</span></div>'
+        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + r.portions + ' portions</div></div>';
+    });
+    h += '</div>';
+  }
+  h += '<button class="btn btn-primary" onclick="showAddRecipe()" style="margin-top:14px">+ Add Recipe</button></div>';
+  return h;
+}
+
+function renderFoodNav(){
+  const tab = viewState.foodTab || 'today';
+  return '<div class="section-toggle" style="margin-bottom:12px"><div class="section-toggle-inner" id="food-tab-nav">'
+    + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" onclick="setFoodTab(\'today\')">📊 Today</button>'
+    + '<button class="section-seg' + (tab === 'history' ? ' active' : '') + '" data-tab="history" onclick="setFoodTab(\'history\')">📅 History</button>'
+    + '<button class="section-seg' + (tab === 'saved' ? ' active' : '') + '" data-tab="saved" onclick="setFoodTab(\'saved\')">⭐ Saved</button>'
+    + '<button class="section-seg' + (tab === 'recipes' ? ' active' : '') + '" data-tab="recipes" onclick="setFoodTab(\'recipes\')">🧾 Recipes</button>'
+    + '</div></div>';
+}
+
+function setFoodTab(tab){
+  if (!['today','history','saved','recipes'].includes(tab)) return;
+  viewState.foodTab = tab;
+  document.querySelectorAll('#food-tab-nav .section-seg').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  saveState();
+  render();
+}
+
+function renderFood(){
+  let h = renderFoodNav();
+  const tab = viewState.foodTab || 'today';
+  if (tab === 'today') h += renderFoodToday();
+  else if (tab === 'history') h += renderFoodHistory();
+  else if (tab === 'saved') h += renderFoodSaved();
+  else if (tab === 'recipes') h += renderFoodRecipes();
+  return h;
+}
+
 function updateScrollTodayBtn(){
   const btn = document.getElementById('scroll-today-btn');
   const el = document.getElementById('day-' + todayStr());
@@ -2350,6 +2610,11 @@ window.addEventListener('scroll', updateScrollTodayBtn, { passive:true });
 loadState();
 document.querySelectorAll('.mode-seg').forEach(b => b.classList.toggle('active', b.dataset.mode === workoutMode));
 document.querySelectorAll('.view-seg').forEach(b => b.classList.toggle('active', b.dataset.view === viewState.mode));
+document.querySelectorAll('.section-seg').forEach(b => b.classList.toggle('active', b.dataset.section === viewState.section));
+['view-bar','mode-toggle'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.style.display = viewState.section === 'workout' ? '' : 'none';
+});
 render();
 
 if (syncKey()){
