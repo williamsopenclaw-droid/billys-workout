@@ -14,6 +14,12 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v42: Food tab bar fits on phones
+
+The four Food tabs used the Workout/Food switch's style (16px side padding, sized to content), which needed ~360px — more than a 375px phone has, so "Recipes" was clipped. `#food-tab-nav` now has its own CSS: full width, four equal tabs, 4px padding, and 12px text below 360px. Measured in the browser at 279, 320, 375 and 414px: every tab's text fits, no page overflow. The Workout/Food switch is unchanged. CSS only.
+
+---
+
 ## September 23, 2026 update — v41: recipe partial portions
 
 - **Log any amount.** Recipe cards have **Log 1 portion** (unchanged) and **Log amount…**, a sheet with Portions / Grams, a live macro preview, and limits (0 < portions ≤ 20, 0 < grams ≤ 5000). Everything goes through `logRecipeAmount(id, portions, grams)`, which logs to `foodDay()` and records `meal.recipe = {id, portions, grams?}` (additive).
@@ -63,7 +69,7 @@ William is developing Food in gates: **1** reliable manual Food (1a done here), 
 - **Deletes confirm** (meal, saved meal, recipe). **Numbers are validated** on save (`foodRowError()`): blank = 0, otherwise a finite number ≥ 0; recipe portions > 0. **Meal time is escaped** — it was the one unescaped Food field.
 - Logging a saved meal now always gives items fresh ids (it reused the saved meal's, so repeated logs shared ids).
 
-Tests: 115 assertions. Each Gate 1a behaviour was mutation-checked — thirteen deliberate breakages, each made the suite fail. Known cosmetic issue left alone: the Food tab bar is ~10px wider than a 375px phone, clipping "Recipes" slightly.
+Tests: 115 assertions. Each Gate 1a behaviour was mutation-checked — thirteen deliberate breakages, each made the suite fail. (The Food tab bar clipping noted here was fixed in v42.)
 
 ---
 
@@ -322,7 +328,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v41 recipe-portions commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v41 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v42 tab-bar commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v42 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 
