@@ -313,6 +313,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-chip-main{flex:1;min-width:0}
 .food-chip-del{color:var(--muted);font-size:18px;line-height:1;padding:4px;flex-shrink:0}
 .food-chip-del:active{color:var(--red)}
+.food-chip-edit{color:var(--muted);font-size:16px;line-height:1;padding:6px 8px;flex-shrink:0}
+.food-chip-edit:active{color:var(--accent)}
 .food-recipe-actions{display:flex;gap:6px;margin-top:8px}
 .food-recipe-actions .mini-btn{flex:1}
 .food-editor-items{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
@@ -1344,7 +1346,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v42 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v43 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2136,7 +2138,9 @@ function renderFoodSaved(){
       const t = mealMacros(s);
       h += '<div class="food-chip" data-act="log-saved-meal" data-id="' + esc(s.id) + '">'
         + '<div class="food-chip-main"><div class="food-chip-name">' + esc(s.name) + '</div>'
-        + '<div class="food-chip-stats">' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div>'
+        + '<div class="food-chip-stats">' + (categoryById(s.category) ? esc(categoryLabel(s.category)) + ' · ' : '')
+        + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div>'
+        + '<span class="food-chip-edit" data-act="edit-saved-meal" data-id="' + esc(s.id) + '" aria-label="Edit saved meal">✎</span>'
         + '<span class="food-chip-del" data-act="delete-saved-meal" data-id="' + esc(s.id) + '">×</span></div>';
     });
     h += '</div>';
@@ -2447,24 +2451,50 @@ function renderEditableRow(it, i, mode){
                              + (it.notes ? ' · ' + esc(it.notes) : '') + '</div>' : '')
     + '</div><button class="food-item-del" data-act="' + act + '" data-index="' + i + '">×</button></div>';
 }
+// Saved meals reuse the meal editor (same chips, rows and number checks) with
+// `kind: 'saved'`: no date, time, notes or photo, and Save writes the saved
+// meal. Meals already logged from it are copies and don't change.
+function openSavedMealEditor(id){
+  const s = (food.savedMeals || []).find(x => x.id === id);
+  if (!s) return;
+  window._mealEditor = { kind: 'saved', savedId: s.id, ds: foodDay(), name: s.name || '',
+    category: categoryById(s.category) ? s.category : '', time: '', notes: '',
+    items: (s.items || []).map(it => Object.assign({}, it)) };
+  if (!window._mealEditor.items.length) window._mealEditor.items = [blankItem()];
+  renderMealEditor();
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function updateSavedMeal(id, patch){
+  const arr = food.savedMeals || [];
+  const i = arr.findIndex(s => s.id === id);
+  if (i < 0) return false;
+  const next = Object.assign({}, arr[i], patch);           // keep fields a newer build added
+  if (!categoryById(next.category)) delete next.category;
+  arr[i] = next;
+  saveState(); render();
+  return true;
+}
+
 function renderMealEditor(){
   const d = window._mealEditor;
   if (!d) return;
-  let h = '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + ' · ' + esc(fmtShort(d.ds)) + '</h2>';
+  const saved = d.kind === 'saved';
+  let h = saved ? '<h2>Edit saved meal</h2><div class="food-hint">Changes apply the next time you log it. Meals already logged stay as they are.</div>'
+                : '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + ' · ' + esc(fmtShort(d.ds)) + '</h2>';
   h += '<div class="form-group"><label class="form-label">Meal</label><div class="food-cat-chips">';
   MEAL_CATEGORIES.forEach(c => {
     h += '<button class="food-cat-chip' + (d.category === c.id ? ' active' : '') + '" data-act="meal-cat" data-cat="' + c.id + '">' + esc(c.label) + '</button>';
   });
   h += '</div></div>';
-  h += renderAiBox(d);
-  h += '<div class="form-group"><label class="form-label">Name (optional)</label>'
+  if (!saved) h += renderAiBox(d);
+  h += '<div class="form-group"><label class="form-label">Name' + (saved ? '' : ' (optional)') + '</label>'
     + '<input class="form-input" data-input="meal-name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'e.g. Chicken stir-fry') + '" value="' + esc(d.name) + '"></div>';
-  h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
+  if (!saved) h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
     + '<input class="form-input" data-input="meal-time" placeholder="e.g. 12:30 PM" value="' + esc(d.time) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Items</label><div class="food-editor-items">';
   (d.items || []).forEach((it, i) => { h += renderEditableRow(it, i, 'meal'); });
   h += '</div><button class="btn btn-secondary" data-act="meal-add-item">+ Add item</button></div>';
-  h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
+  if (!saved) h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
     + '<input class="form-input" data-input="meal-notes" placeholder="Supplements, water, etc." value="' + esc(d.notes) + '"></div>';
   h += '<button class="btn btn-primary" data-act="meal-save">Save</button>';
   h += '<button class="btn btn-secondary" data-act="meal-cancel">Cancel</button>';
@@ -2500,6 +2530,14 @@ function mealSaveDraft(){
     kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
     fatG: foodNum(it.fatG), grams: foodNum(it.grams)
   })).filter(it => it.name !== 'Item' || it.kcal || it.proteinG || it.carbsG || it.fatG || it.grams);
+  if (d.kind === 'saved'){
+    if (!items.length){ toast('Add at least one item'); return; }
+    if (!updateSavedMeal(d.savedId, { name: name, category: category, items: items })){ toast('That saved meal no longer exists'); }
+    else toast('Saved meal updated');
+    window._mealEditor = null;
+    closeModal();
+    return;
+  }
   const meal = { id: d.id || foodUid('m'), name: name, category: category, time: (d.time || '').trim(), items: items, notes: (d.notes || '').trim() };
   if (d.aiUsed) meal.aiAssisted = true;
   if (d.id) updateMeal(d.ds, d.id, meal); else addMealToDay(d.ds, meal);
@@ -2810,6 +2848,7 @@ function handleFoodClick(e){
     case 'delete-meal': deleteMeal(ds, id); break;
     case 'log-saved-meal': logSavedMeal(id); break;
     case 'delete-saved-meal': deleteSavedMeal(id); break;
+    case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'add-saved-meal': openAddSavedMealModal(); break;
     case 'log-recipe': logRecipe(id); break;
     case 'log-recipe-amount': openRecipeLog(id); break;
@@ -2934,7 +2973,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v42',
+    appVersion: 'v43',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));

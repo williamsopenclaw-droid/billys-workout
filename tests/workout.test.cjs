@@ -371,6 +371,52 @@ eq(rp.run("food.recipes[2].cookedWeightG"),1800);
 // Old recipes (no cooked weight, no ingredient portions) behave exactly as before.
 eq(rp.run("recipePerPortion(food.recipes[1]).kcal"),200);
 
+// --- Editing saved meals ---
+const sm=app('2026-09-23');
+const clickS=(act,data={})=>sm.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+sm.run("addSavedMeal('Shake',[{id:'w',name:'Whey',kcal:120,proteinG:25,source:'ai',confidence:'high'}],'post-workout');food.savedMeals[0].futureKey='kept';saveState()");
+const SM=sm.run("food.savedMeals[0].id");
+ok(sm.run("renderFoodSaved()").includes('data-act=\"edit-saved-meal\" data-id=\"'+SM+'\"'));
+ok(sm.run("renderFoodSaved()").includes('After Work / Workout · 120 kcal'));
+// Log it once before editing: that logged copy must not change afterwards.
+clickS('log-saved-meal',{id:SM});
+// The editor opens in saved mode: chips, name and items, but no date, time, notes or photo.
+clickS('edit-saved-meal',{id:SM});
+const smHtml=sm.el('modal').innerHTML;
+ok(smHtml.includes('Edit saved meal')); ok(smHtml.includes('data-cat="post-workout"'));
+ok(!smHtml.includes('data-input="meal-time"')); ok(!smHtml.includes('data-input="meal-notes"')); ok(!smHtml.includes('meal-photo'));
+eq(sm.run("[window._mealEditor.kind,window._mealEditor.name,window._mealEditor.category,window._mealEditor.items.map(i=>i.name)]"),['saved','Shake','post-workout',['Whey']]);
+// Bad numbers and an empty item list are refused; nothing changes.
+sm.run("window._mealEditor.items[0].kcal='-1';mealSaveDraft()");
+eq(sm.run("food.savedMeals[0].items[0].kcal"),120);
+sm.run("window._mealEditor.items=[{name:'',kcal:''}];mealSaveDraft()");
+ok(sm.el('toast').textContent.includes('at least one item')); eq(sm.run("food.savedMeals[0].items.length"),1);
+// A real edit: rename, change category, change an amount, add an item.
+sm.run("window._mealEditor.name='Shake + banana';window._mealEditor.items=[{id:'w',name:'Whey',kcal:'130',proteinG:'26',source:'ai',confidence:'high'},{name:'Banana',kcal:'105',proteinG:'1.3'}]");
+clickS('meal-cat',{cat:'am-snack'}); clickS('meal-save');
+const edited=sm.run("food.savedMeals[0]");
+eq([edited.id,edited.name,edited.category,edited.items.map(i=>[i.name,i.kcal]),edited.items[0].source,edited.futureKey],
+   [SM,'Shake + banana','am-snack',[['Whey',130],['Banana',105]],'ai','kept']);
+eq(sm.run("food.savedMeals.length"),1);                                         // updated in place, not duplicated
+eq(sm.run("window._mealEditor"),null);
+eq(JSON.parse(sm.memory.get('caprica_workout_v2')).food.savedMeals[0].name,'Shake + banana');   // persisted
+// The meal logged before the edit is unchanged; logging now uses the new version.
+eq(sm.run("food.mealsByDay['2026-09-23'].map(m=>[m.name,mealMacros(m).kcal])"),[['Shake',120]]);
+clickS('log-saved-meal',{id:SM});
+eq(sm.run("food.mealsByDay['2026-09-23'].map(m=>[m.name,m.category,mealMacros(m).kcal])"),[['Shake','post-workout',120],['Shake + banana','am-snack',235]]);
+// Clearing the category removes it; a blank name then isn't allowed.
+clickS('edit-saved-meal',{id:SM}); clickS('meal-cat',{cat:'am-snack'});
+sm.run("window._mealEditor.name='';mealSaveDraft()"); eq(sm.run("food.savedMeals[0].name"),'Shake + banana');
+sm.run("window._mealEditor.name='Shake';mealSaveDraft()");
+eq(sm.run("['category' in food.savedMeals[0],food.savedMeals[0].name]"),[false,'Shake']);
+// Editing a saved meal that another device deleted meanwhile doesn't resurrect it.
+clickS('edit-saved-meal',{id:SM}); sm.run("food.savedMeals=[];mealSaveDraft()");
+eq(sm.run("food.savedMeals.length"),0); ok(sm.el('toast').textContent.includes('no longer exists'));
+// Cancel leaves it alone; ordinary meal editing is unaffected by the saved mode.
+sm.run("addSavedMeal('Oats',[{name:'Oats',kcal:300}])"); clickS('edit-saved-meal',{id:sm.run("food.savedMeals[0].id")});
+sm.run("window._mealEditor.name='Changed'"); clickS('meal-cancel'); eq(sm.run("food.savedMeals[0].name"),'Oats');
+sm.run("openMealEditor('2026-09-23',null)"); ok(sm.el('modal').innerHTML.includes('data-input="meal-time"')); ok(sm.el('modal').innerHTML.includes('meal-photo'));
+
 (async()=>{
   // --- Gate 3: food-photo function ---
   const {pathToFileURL}=require('node:url');
@@ -490,5 +536,5 @@ eq(rp.run("recipePerPortion(food.recipes[1]).kcal"),200);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, sync-merge, navigation, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, sync-merge, navigation, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});
