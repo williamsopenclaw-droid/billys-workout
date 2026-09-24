@@ -14,6 +14,22 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v36 food tracking, v37 hardening
+
+**v36 (Sept 21–23, built outside Claude, commits `90a60e5`, `651e301`, `a921380`)** added a Food section beside Workout: meals per day, daily kcal/protein goals, saved one-tap meals, and meal-prep recipes logged one portion at a time. State is a **top-level `food` object** in the same `caprica_workout_v2` blob (not inside `store`), so it rides along with save, backup, restore and sync. Totals are always recomputed from items (`mealMacros()`); a stored `totals` is ignored. All food UI is event-delegated via `data-act`/`data-input` — no user text in inline `onclick`. `90a60e5` shipped a parse error (blank app) that `651e301` fixed a day later — the syntax check (`node tests/check_syntax.cjs`) exists to prevent a repeat.
+
+**The app is no longer network-free.** `netlify/functions/analyze-food.js` serves `POST /api/analyze-food`: meal photo in, itemised macro estimate out, via an OpenAI-compatible gateway (`OPENAI_API_KEY` + `OPENAI_BASE_URL` env vars on Netlify, model `gpt-4o-mini`). **The UI does not call it yet.** It is **off unless `ANALYZE_FOOD_TOKEN` is set on Netlify** (returns 503), and then requires a matching `X-Food-Token` header. Before v37 it was open to anyone when the token was unset. When wiring the UI to it: a token hard-coded in `index.html` is public (repo and site are both public), so it only slows down casual abuse — put a spend cap on the gateway key as well.
+
+**v37 fixes (`sw.js` → v37, app label → v37):**
+- `saveState()` now carries **unknown top-level keys** through every save (`unknownTopKeys`, filled in `loadState()` for schema ≥ 4 only — v3 blobs' top-level keys are the old schema and must not be carried). Before this, a build older than the data dropped anything newer at the top level — which is exactly how pre-v36 devices drop `food`, and would have repeated with the next top-level addition.
+- `applyRemote()` keeps this device's `food` when the incoming synced copy has **no `food` key at all** (written by a pre-v36 build), and marks the device dirty so the next sync repairs the server. A copy that *has* `food`, even an empty one, wins as normal. This only mitigates the pre-v36 client problem on the receiving end; it can't stop an old build from pushing a food-less copy.
+- Conflict and restore prompts show meal counts alongside workout counts (`countMeals()`), so a food-only difference is visible.
+- `analyze-food.js`: fail closed without the token; `notes` added to the strict schema's `required` (strict mode needs every property listed, or the API rejects the request — it would have failed every call).
+
+Tests: `node tests/workout.test.cjs` now covers food mutations and totals, persistence, the top-level key carry-through, the sync food guard, and the function's auth and schema (77 assertions). Each new check was confirmed to fail against the pre-v37 code.
+
+---
+
 ## September 20, 2026 update — v35
 
 Gym now forecasts Monday–Friday from September 21, using separate built-in types `Upper A`, `Lower A`, `Upper B`, `Lower B`. `gymProjection()` skips weekends and carries missed workouts to the next weekday. Existing pinned days (including legacy/custom ones) remain intact; only the new types advance the new cycle. Travel still uses the original every-other-day Upper/Lower/Arms forecast and 10-week A/B blocks.
@@ -30,14 +46,16 @@ Validation: `node tests/workout.test.cjs` checks scheduling, skips, pins, histor
 
 ## What this project is
 
-A personal workout tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No backend, no accounts, no network calls at runtime.
+A personal workout and food tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No accounts. Network use: optional Supabase sync (Rule #12) and a not-yet-wired food-photo Netlify function (see the v36/v37 update above).
 
 - `index.html` — **the entire app.** HTML, CSS and JS in one file (~1,600 lines).
 - `sw.js` — service worker. Network-first for `index.html`, cache-first for icons.
 - `manifest.json`, `icon-192.png`, `icon-512.png` — PWA install metadata.
 - `netlify.toml` — publish `.`, no build command, asset processing off.
+- `netlify/functions/analyze-food.js` — the food-photo endpoint (v36).
+- `tests/workout.test.cjs` (logic tests) and `tests/check_syntax.cjs` (Rule #11 in one command).
 
-No `package.json`, no bundler, no CI. Edit `index.html` directly.
+No `package.json`, no bundler. The only CI is the Supabase keep-alive workflow. Edit `index.html` directly.
 
 ---
 
@@ -250,7 +268,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `04fad31` (2026-08-08).** Before writing new entries, run `git log 04fad31..HEAD --oneline` — anything it prints is undocumented. Bump this hash in the same commit that writes the entry.
+**Docs current through commit `a921380` (2026-09-23), plus the v37 commit that wrote this line.** Before writing new entries, run `git log a921380..HEAD --oneline` — anything beyond the v37 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

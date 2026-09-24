@@ -26,11 +26,11 @@ function validatePhotoBase64(s){
 }
 
 function checkToken(req){
-  // Token auth: if ANALYZE_FOOD_TOKEN env var is set on Netlify, require matching
-  // X-Food-Token header. If env var isn't set, the function is public (handy for
-  // first-time setup; flip it on once the UI starts sending the header).
+  // Fail closed. Without ANALYZE_FOOD_TOKEN set on Netlify the function is OFF —
+  // it used to be public in that state, which let anyone who found the URL
+  // spend the AI credits. Set the env var (and send it as X-Food-Token) to enable.
   const required = process.env.ANALYZE_FOOD_TOKEN;
-  if (!required) return null;
+  if (!required) return json(503, { error: 'Food analysis is not enabled (ANALYZE_FOOD_TOKEN unset)' });
   const supplied = req.headers.get('X-Food-Token');
   if (supplied !== required) return json(401, { error: 'Missing or invalid X-Food-Token header' });
   return null;
@@ -80,7 +80,10 @@ export default async (req) => {
             confidence:  { type: 'string', enum: ['low', 'medium', 'high'] },
             notes:       { type: 'string' }
           },
-          required: ['name','grams','kcal','proteinG','carbsG','fatG','confidence'],
+          // Strict mode requires EVERY property to be listed here, `notes` included
+          // (the model returns '' when it has none). Leaving one out makes the
+          // API reject the request outright.
+          required: ['name','grams','kcal','proteinG','carbsG','fatG','confidence','notes'],
         }
       },
       totals: {

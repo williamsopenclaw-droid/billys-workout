@@ -114,4 +114,59 @@ for(const d of ['2026-09-21','2026-09-22','2026-09-23','2026-09-24']){
 ui.run("setDayType('2026-09-21','Upper A');S().customTypes.Test=templateFor('2026-09-21','Upper A');setDayType('2026-09-22','Test')");
 eq(ui.run("getPlan('2026-09-22')[0].range"),'6-10');
 ui.run("openExerciseModal('2026-09-21',1)");ok(ui.el('modal').innerHTML.includes('Bodyweight'));
-console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration and rendering.');
+eq(JSON.parse(v3.memory.get('caprica_workout_v2')).sessionLog,undefined); // old top-level keys not carried forward
+// Food: totals are recomputed from items, and meals persist across a reload.
+const f=app('2026-09-23');
+f.run("addMealToDay('2026-09-23',{id:'m1',name:'Oats',items:[{kcal:300,proteinG:10,carbsG:50,fatG:5,grams:80},{kcal:120,proteinG:25}],totals:{kcal:9999}})");
+eq(f.run("foodTotalsForDay('2026-09-23')"),{kcal:420,proteinG:35,carbsG:50,fatG:5,count:1});
+const fSaved=JSON.parse(f.memory.get('caprica_workout_v2'));
+eq(fSaved.food.mealsByDay['2026-09-23'].length,1);
+eq(app('2026-09-23',fSaved).run("foodTotalsForDay('2026-09-23').kcal"),420);
+f.run("updateMeal('2026-09-23','m1',{name:'Oats + whey'})");
+eq(f.run("food.mealsByDay['2026-09-23'][0].name"),'Oats + whey');
+f.run("deleteMeal('2026-09-23','m1')");
+eq(f.run("foodTotalsForDay('2026-09-23').count"),0);
+// Recipes log one portion; saved meals log a copy with fresh ids.
+f.run("addRecipe('Chili',4,[{name:'Beef',kcal:1000,proteinG:100},{name:'Beans',kcal:400,proteinG:28}]);logRecipe(food.recipes[0].id)");
+eq(f.run("[foodTotalsForDay('2026-09-23').kcal,foodTotalsForDay('2026-09-23').proteinG]"),[350,32]);
+f.run("addSavedMeal('Shake',[{id:'x',name:'Whey',kcal:200,proteinG:40}]);logSavedMeal(food.savedMeals[0].id)");
+eq(f.run("foodTotalsForDay('2026-09-23').count"),2);
+ok(f.run("food.mealsByDay['2026-09-23'][1].id!==food.savedMeals[0].id"));
+f.run("deleteSavedMeal(food.savedMeals[0].id);deleteRecipe(food.recipes[0].id)");
+eq(f.run("[food.savedMeals.length,food.recipes.length,foodTotalsForDay('2026-09-23').count]"),[0,0,2]);
+// A pre-food blob loads with empty food, and saving adds it.
+const preFood=app('2026-09-23',{_schemaVersion:4,store:{gym:{},travel:{}}});
+eq(preFood.run("food.mealsByDay"),{});
+preFood.run("saveState()");ok(JSON.parse(preFood.memory.get('caprica_workout_v2')).food);
+// Unknown top-level keys survive a save (the next feature added up there must not be dropped by this build).
+const future=app('2026-09-23',{_schemaVersion:5,store:{gym:{},travel:{}},food:fSaved.food,futureTop:{kept:true}});
+future.run("saveState()");
+eq(JSON.parse(future.memory.get('caprica_workout_v2')).futureTop,{kept:true});
+// A synced copy from a pre-food build keeps this device's food and queues a push to repair the server.
+const pull=app('2026-09-23',fSaved);
+pull.run("applyRemote({updated_at:'t1',data:{_schemaVersion:4,store:{gym:{},travel:{}}}})");
+eq(JSON.parse(pull.memory.get('caprica_workout_v2')).food.mealsByDay['2026-09-23'].length,1);
+eq(JSON.parse(pull.memory.get('caprica_workout_sync_meta')).dirty,true);
+// ...but a copy that has food wins as usual, including an empty log.
+pull.run("applyRemote({updated_at:'t2',data:{_schemaVersion:5,store:{gym:{},travel:{}},food:{mealsByDay:{}}}})");
+eq(JSON.parse(pull.memory.get('caprica_workout_v2')).food.mealsByDay,{});
+eq(JSON.parse(pull.memory.get('caprica_workout_sync_meta')).dirty,false);
+eq(pull.run("countMeals("+JSON.stringify(fSaved)+")"),1);
+// Food-photo function: off unless the token is set, and every schema property is required (strict mode).
+(async()=>{
+  const {pathToFileURL}=require('node:url');
+  const fn=(await import(pathToFileURL(path.join(__dirname,'..','netlify','functions','analyze-food.js')).href)).default;
+  const req=(h={})=>new Request('http://x/api/analyze-food',{method:'POST',headers:h,body:JSON.stringify({photoBase64:'data:image/png;base64,AAAA'})});
+  delete process.env.ANALYZE_FOOD_TOKEN;
+  eq((await fn(req())).status,503);
+  process.env.ANALYZE_FOOD_TOKEN='t0ken';
+  eq((await fn(req({'X-Food-Token':'wrong'}))).status,401);
+  process.env.OPENAI_API_KEY='k';process.env.OPENAI_BASE_URL='http://gw';
+  let sent;const realFetch=global.fetch;
+  global.fetch=async(url,o)=>{sent=JSON.parse(o.body);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({items:[{name:'Egg',grams:50,kcal:70,proteinG:6,carbsG:0,fatG:5,confidence:'high',notes:''}],totals:{kcal:1,proteinG:1,carbsG:1,fatG:1},assumptions:[],warnings:[]})}}]}),{status:200});};
+  const res=await fn(req({'X-Food-Token':'t0ken'}));global.fetch=realFetch;
+  eq(res.status,200);
+  eq((await res.json()).totals.kcal,70); // totals recomputed from items, not trusted
+  (function walk(s){ if(s&&s.type==='object'&&s.properties){ eq([...s.required].sort(),Object.keys(s.properties).sort()); Object.values(s.properties).forEach(walk);} if(s&&s.items) walk(s.items); })(sent.response_format.json_schema.schema);
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, sync-merge and food function.');
+})().catch(e=>{console.error(e);process.exit(1);});

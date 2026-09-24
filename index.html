@@ -1075,9 +1075,17 @@ function muscleColor(group){
 // ==========================================
 // PERSISTENCE (+ migration from the week/day schema)
 // ==========================================
+// Top-level keys this build doesn't know about, carried through every save.
+// Without this a device on an older build would save — and sync — the blob
+// without whatever a newer build added. That is exactly how pre-v36 devices
+// drop `food`. Same discipline as the per-store unknown keys in loadState().
+let unknownTopKeys = {};
+const KNOWN_TOP_KEYS = ['_schemaVersion','workoutMode','progression','travelProgression','store','food','viewState'];
+
 function saveState(){
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
+      ...unknownTopKeys,
       _schemaVersion: 5,                  // v36: food slice added
       workoutMode,
       progression: PROGRESSION,
@@ -1150,6 +1158,13 @@ function loadState(){
   if (!raw) return;
   let data;
   try { data = JSON.parse(raw); } catch(e){ return; }
+
+  // Only for current-shape blobs: a v3 blob's top-level keys are the old
+  // schema itself, which migrateV3() replaces — don't carry them forward.
+  unknownTopKeys = {};
+  if ((data._schemaVersion || 0) >= 4){
+    Object.keys(data).forEach(k => { if (!KNOWN_TOP_KEYS.includes(k)) unknownTopKeys[k] = data[k]; });
+  }
 
   if (data.progression)       Object.assign(PROGRESSION, data.progression);
   if (data.travelProgression) Object.assign(TRAVEL_PROGRESSION, data.travelProgression);
@@ -1277,7 +1292,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v36 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v37 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2396,7 +2411,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v35',
+    appVersion: 'v37',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
@@ -2449,8 +2464,8 @@ function importBackup(input){
     const ok = confirm(
       'Restore this backup?\n\n' +
       'From: ' + when + '\n' +
-      'Contains: ' + incoming.logged + ' logged workouts across ' + incoming.days + ' days\n\n' +
-      'This REPLACES everything on this device (' + current.logged + ' logged workouts).\n' +
+      'Contains: ' + incoming.logged + ' logged workouts across ' + incoming.days + ' days, ' + countMeals(data) + ' meals\n\n' +
+      'This REPLACES everything on this device (' + current.logged + ' logged workouts, ' + countMeals({ food }) + ' meals).\n' +
       'Your current data is kept as a one-time safety copy in case this was a mistake.'
     );
     if (!ok){ toast('Restore cancelled'); return; }
@@ -2551,11 +2566,18 @@ async function sbPush(expectedUpdatedAt){
 }
 
 function applyRemote(remote){
+  // A blob with no `food` key was written by a pre-v36 build that doesn't know
+  // food exists — it is not a request to delete this device's food log. Keep
+  // ours, and mark dirty so it goes back up and repairs the server copy.
+  const data = Object.assign({}, remote.data);
+  const mine = localBlob();
+  const keptFood = !('food' in data) && !!(mine && mine.food);
+  if (keptFood) data.food = mine.food;
   try {
     localStorage.setItem(LS_KEY + '_pre_restore', localStorage.getItem(LS_KEY) || '');
-    localStorage.setItem(LS_KEY, JSON.stringify(remote.data));
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
   } catch(e){ setSyncStatus('error','could not write'); return; }
-  setSyncMeta({ syncedAt: remote.updated_at, dirty:false, lastSync: new Date().toISOString() });
+  setSyncMeta({ syncedAt: remote.updated_at, dirty: keptFood, lastSync: new Date().toISOString() });
   location.reload();   // same reason as importBackup — see that comment
 }
 
@@ -2618,14 +2640,21 @@ function countWorkouts(blob){
   return n;
 }
 
+function countMeals(blob){
+  const byDay = (blob && blob.food && blob.food.mealsByDay) || {};
+  return Object.keys(byDay).reduce((n, ds) => n + ((byDay[ds] || []).length), 0);
+}
+
 // Both sides changed since the last sync. Never pick for the user — whichever
 // way this goes, somebody's logged sets stop being the live copy.
 function openConflictModal(remote){
-  const mine = countWorkouts(localBlob()), theirs = countWorkouts(remote.data);
+  const local = localBlob();
+  const mine = countWorkouts(local), theirs = countWorkouts(remote.data);
+  const myMeals = countMeals(local), theirMeals = countMeals(remote.data);
   let h = '<h2>⚠️ Sync conflict</h2>';
   h += '<div class="sub">Both this device and another device changed since the last sync. Nothing has been overwritten.</div>';
-  h += '<div class="rule">This device: <b>' + mine + '</b> logged workouts<br>'
-     + 'Other device: <b>' + theirs + '</b> logged workouts (saved ' + new Date(remote.updated_at).toLocaleString() + ')</div>';
+  h += '<div class="rule">This device: <b>' + mine + '</b> logged workouts, <b>' + myMeals + '</b> meals<br>'
+     + 'Other device: <b>' + theirs + '</b> logged workouts, <b>' + theirMeals + '</b> meals (saved ' + new Date(remote.updated_at).toLocaleString() + ')</div>';
   h += '<div class="prev-note">Whichever you discard is kept as a one-time safety copy on this device.</div>';
   h += '<button class="btn btn-secondary" onclick="resolveConflict(\'mine\')">Keep this device\'s version</button>';
   h += '<button class="btn btn-secondary" onclick="resolveConflict(\'theirs\')">Use the other device\'s version</button>';
