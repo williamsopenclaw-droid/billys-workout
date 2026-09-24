@@ -344,6 +344,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-ai-notes{margin:0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.4}
 .food-ai-error{font-size:12px;color:var(--red);line-height:1.4}
 .food-ai-tag{grid-column:1/-1;font-size:11px;color:var(--accent);line-height:1.3}
+/* v41: recipe partial portions */
+.food-ing-portions{grid-column:1/-1;font-size:12px}
+.food-log-preview{background:var(--card);border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center}
+.food-log-err{color:var(--red);font-weight:500}
+.food-recipe-actions{flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -1334,7 +1339,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v40 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v41 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1916,7 +1921,30 @@ function mealMacros(meal){
     fatG:     acc.fatG     + (Number(i.fatG)     || 0)
   }), { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
 }
-function recipeKcal(r){ return (r.ingredients || []).reduce((s, i) => s + (Number(i.kcal) || 0), 0); }
+// ---- Recipe portion maths (v41) ----
+// An ingredient normally divides by the recipe's portion count, but may carry
+// its own (`ing.portions`) — e.g. a stir-fry whose mix makes 8 portions but
+// whose rice only made 7. Logging N portions takes N/ingPortions of each
+// ingredient. Logging by weight needs the cooked weight of the whole batch
+// (`r.cookedWeightG`, weighed once after cooking): grams / (cooked / portions)
+// gives the portion count, which then goes through the same maths.
+function recipePortions(r){ const n = Number(r && r.portions); return (isFinite(n) && n > 0) ? n : 1; }
+function ingPortions(r, ing){ const n = Number(ing && ing.portions); return (isFinite(n) && n > 0) ? n : recipePortions(r); }
+function recipePortionWeight(r){ const w = Number(r && r.cookedWeightG); return (isFinite(w) && w > 0) ? w / recipePortions(r) : 0; }
+function recipeScaledItems(r, amount){
+  return (r.ingredients || []).map(ing => {
+    const f = amount / ingPortions(r, ing);
+    return {
+      id: foodUid('i'), name: ing.name || 'Ingredient',
+      kcal:     foodRound1(foodNum(ing.kcal)     * f),
+      proteinG: foodRound1(foodNum(ing.proteinG) * f),
+      carbsG:   foodRound1(foodNum(ing.carbsG)   * f),
+      fatG:     foodRound1(foodNum(ing.fatG)     * f),
+      grams:    foodRound1(foodNum(ing.grams)    * f)
+    };
+  });
+}
+function recipePerPortion(r){ return mealMacros({ items: recipeScaledItems(r, 1) }); }
 function foodTotalsForDay(ds){
   const meals = (food.mealsByDay && food.mealsByDay[ds]) || [];
   return meals.reduce((acc, m) => {
@@ -2119,13 +2147,16 @@ function renderFoodRecipes(){
   } else {
     h += '<div class="food-recipes-list">';
     food.recipes.forEach(r => {
-      const per = r.portions > 0 ? Math.round(recipeKcal(r) / r.portions) : 0;
+      const per = recipePerPortion(r);
+      const pw = recipePortionWeight(r);
       h += '<div class="food-recipe-card">'
         + '<div class="food-recipe-row"><span class="food-recipe-name">' + esc(r.name) + '</span>'
-        + '<span class="food-recipe-per">' + per + ' kcal / portion</span></div>'
-        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + esc(r.portions) + ' portions</div>'
+        + '<span class="food-recipe-per">' + Math.round(per.kcal) + ' kcal · ' + Math.round(per.proteinG) + 'g P / portion</span></div>'
+        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + esc(r.portions) + ' portions'
+        + (pw ? ' · ≈' + Math.round(pw) + ' g each' : '') + '</div>'
         + '<div class="food-recipe-actions">'
         + '<button class="mini-btn" data-act="log-recipe" data-id="' + esc(r.id) + '">Log 1 portion</button>'
+        + '<button class="mini-btn" data-act="log-recipe-amount" data-id="' + esc(r.id) + '">Log amount…</button>'
         + '<button class="mini-btn" data-act="edit-recipe" data-id="' + esc(r.id) + '">Edit</button>'
         + '<button class="mini-btn" data-act="delete-recipe" data-id="' + esc(r.id) + '">Delete</button>'
         + '</div></div>';
@@ -2264,9 +2295,9 @@ function logSavedMeal(id){
 }
 
 // ---- Recipes ----
-function addRecipe(name, portions, ingredients){
+function addRecipe(name, portions, ingredients, extra){
   food.recipes = food.recipes || [];
-  food.recipes.push({ id: foodUid('r'), name: name, portions: portions, ingredients: ingredients || [] });
+  food.recipes.push(Object.assign({ id: foodUid('r'), name: name, portions: portions, ingredients: ingredients || [] }, extra || {}));
   saveState(); render();
   toast('Recipe saved');
 }
@@ -2284,22 +2315,96 @@ function deleteRecipe(id){
   saveState(); render();
   toast('Recipe deleted');
 }
-function logRecipe(id){
+function logRecipe(id){ logRecipeAmount(id, 1, null); }
+function portionsLabel(n){ const v = Math.round(n * 100) / 100; return v + (v === 1 ? ' portion' : ' portions'); }
+// Logs `portions` of a recipe; `grams` is only for the label and the record.
+function logRecipeAmount(id, portions, grams){
   const r = (food.recipes || []).find(x => x.id === id);
-  if (!r) return;
-  const portions = foodNum(r.portions) > 0 ? foodNum(r.portions) : 1;
-  const items = (r.ingredients || []).map(ing => ({
-    id: foodUid('i'), name: ing.name || 'Ingredient',
-    kcal:     foodRound1(foodNum(ing.kcal)     / portions),
-    proteinG: foodRound1(foodNum(ing.proteinG) / portions),
-    carbsG:   foodRound1(foodNum(ing.carbsG)   / portions),
-    fatG:     foodRound1(foodNum(ing.fatG)     / portions),
-    grams:    foodRound1(foodNum(ing.grams)    / portions)
-  }));
+  if (!r || !(portions > 0)) return false;
   const ds = foodDay();
   viewState.foodTab = 'today';
-  addMealToDay(ds, { id: foodUid('m'), name: r.name + ' (1 portion)', category: defaultCategory(ds), time: '', notes: '', items: items });
+  const meal = { id: foodUid('m'), name: r.name + ' (' + (grams ? foodRound1(grams) + ' g' : portionsLabel(portions)) + ')',
+                 category: defaultCategory(ds), time: '', notes: '', items: recipeScaledItems(r, portions),
+                 recipe: { id: r.id, portions: foodRound1(portions * 1000) / 1000 } };
+  if (grams) meal.recipe.grams = foodRound1(grams);
+  addMealToDay(ds, meal);
   toast('Logged ' + r.name + (ds === todayStr() ? '' : ' to ' + fmtShort(ds)));
+  return true;
+}
+
+// ---- Log a recipe by portions or by weight ----
+const RECIPE_LOG_MAX = { portions: 20, grams: 5000 };
+function openRecipeLog(id){
+  const r = (food.recipes || []).find(x => x.id === id);
+  if (!r) return;
+  window._recipeLog = { id: id, mode: 'portions', value: '1' };
+  renderRecipeLog();
+  document.getElementById('modal-overlay').classList.add('show');
+}
+// Returns { portions, grams } or { error }.
+function recipeLogAmount(){
+  const d = window._recipeLog;
+  const r = d && (food.recipes || []).find(x => x.id === d.id);
+  if (!r) return { error: 'Recipe not found' };
+  const n = Number(d.value);
+  if (d.value === '' || !isFinite(n) || n <= 0) return { error: 'Enter an amount above 0' };
+  if (n > RECIPE_LOG_MAX[d.mode]) return { error: 'That\'s more than ' + RECIPE_LOG_MAX[d.mode] + (d.mode === 'grams' ? ' g' : ' portions') };
+  if (d.mode === 'grams'){
+    const pw = recipePortionWeight(r);
+    if (!pw) return { error: 'Add the cooked weight of the whole batch to this recipe first' };
+    return { portions: n / pw, grams: n };
+  }
+  return { portions: n, grams: null };
+}
+function recipeLogPreviewText(){
+  const a = recipeLogAmount();
+  if (a.error) return '<span class="food-log-err">' + esc(a.error) + '</span>';
+  const r = food.recipes.find(x => x.id === window._recipeLog.id);
+  const m = mealMacros({ items: recipeScaledItems(r, a.portions) });
+  return (a.grams ? '= ' + esc(portionsLabel(a.portions)) + ' · ' : '')
+    + Math.round(m.kcal) + ' kcal · ' + Math.round(m.proteinG) + 'g P · ' + Math.round(m.carbsG) + 'g C · ' + Math.round(m.fatG) + 'g F';
+}
+function renderRecipeLog(){
+  const d = window._recipeLog;
+  const r = d && (food.recipes || []).find(x => x.id === d.id);
+  if (!r) return;
+  const pw = recipePortionWeight(r);
+  let h = '<h2>Log ' + esc(r.name) + ' · ' + esc(fmtShort(foodDay())) + '</h2>';
+  h += '<div class="food-cat-chips" style="margin-bottom:12px">'
+    + '<button class="food-cat-chip' + (d.mode === 'portions' ? ' active' : '') + '" data-act="recipe-log-mode" data-mode="portions">Portions</button>'
+    + '<button class="food-cat-chip' + (d.mode === 'grams' ? ' active' : '') + '" data-act="recipe-log-mode" data-mode="grams">Grams</button></div>';
+  h += '<div class="form-group"><label class="form-label">' + (d.mode === 'grams' ? 'Weight eaten (g)' : 'Portions (e.g. 0.5, 1.5)') + '</label>'
+    + '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="recipe-log-value" value="' + esc(d.value) + '"></div>';
+  if (d.mode === 'grams' && !pw){
+    h += '<div class="food-hint">Weigh the whole cooked batch once and add it under Edit → "Cooked weight of whole batch". Then grams work.</div>';
+  } else if (d.mode === 'grams'){
+    h += '<div class="food-hint">1 portion ≈ ' + Math.round(pw) + ' g</div>';
+  }
+  h += '<div class="food-log-preview" id="recipe-log-preview">' + recipeLogPreviewText() + '</div>';
+  h += '<button class="btn btn-primary" data-act="recipe-log-confirm">Log</button>';
+  h += '<button class="btn btn-secondary" data-act="recipe-log-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+}
+function setRecipeLogMode(mode){
+  const d = window._recipeLog;
+  if (!d || (mode !== 'portions' && mode !== 'grams') || d.mode === mode) return;
+  const r = (food.recipes || []).find(x => x.id === d.id);
+  const pw = r ? recipePortionWeight(r) : 0;
+  // Carry the amount across so switching doesn't lose it.
+  const cur = Number(d.value);
+  if (mode === 'grams') d.value = (pw && cur > 0) ? String(Math.round(cur * pw)) : '';
+  else d.value = (pw && cur > 0) ? String(foodRound1(cur / pw)) : '1';
+  d.mode = mode;
+  renderRecipeLog();
+}
+function recipeLogConfirm(){
+  const d = window._recipeLog;
+  if (!d) return;
+  const a = recipeLogAmount();
+  if (a.error){ toast('⚠️ ' + a.error); return; }
+  window._recipeLog = null;
+  logRecipeAmount(d.id, a.portions, a.grams);
+  closeModal();
 }
 
 // ---- Meal editor ----
@@ -2331,6 +2436,8 @@ function renderEditableRow(it, i, mode){
     + numIn(pfx + 'carbsG', it.carbsG, i)
     + numIn(pfx + 'fatG', it.fatG, i)
     + numIn(pfx + 'grams', it.grams, i)
+    + (mode === 'recipe' ? '<input class="form-input food-ing-portions" type="number" inputmode="decimal" step="any" data-input="ing-portions" data-index="' + i
+                            + '" placeholder="Portions, only if different (e.g. rice made 7)" value="' + esc(it.portions != null ? it.portions : '') + '">' : '')
     + (it.source === 'ai' ? '<div class="food-ai-tag">AI estimate · ' + esc(it.confidence || 'low') + ' confidence'
                              + (it.notes ? ' · ' + esc(it.notes) : '') + '</div>' : '')
     + '</div><button class="food-item-del" data-act="' + act + '" data-index="' + i + '">×</button></div>';
@@ -2570,8 +2677,9 @@ function goalsSave(){
 function openRecipeEditor(id){
   const r = id ? (food.recipes || []).find(x => x.id === id) : null;
   window._recipeEditor = r
-    ? { id: r.id, name: r.name || '', portions: r.portions, ingredients: (r.ingredients || []).map(i => Object.assign({}, i)) }
-    : { id: null, name: '', portions: 4, ingredients: [blankIngredient()] };
+    ? { id: r.id, name: r.name || '', portions: r.portions, cookedWeightG: r.cookedWeightG != null ? r.cookedWeightG : '',
+        ingredients: (r.ingredients || []).map(i => Object.assign({}, i)) }
+    : { id: null, name: '', portions: 4, cookedWeightG: '', ingredients: [blankIngredient()] };
   renderRecipeEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -2583,6 +2691,8 @@ function renderRecipeEditor(){
     + '<input class="form-input" data-input="recipe-name" placeholder="e.g. Chicken stir-fry" value="' + esc(d.name) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Portions</label>'
     + '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="recipe-portions" value="' + esc(d.portions) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Cooked weight of whole batch, g (optional — lets you log by weight)</label>'
+    + '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="recipe-cooked" placeholder="Weigh it once after cooking" value="' + esc(d.cookedWeightG) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Ingredients (full batch)</label><div class="food-editor-items">';
   (d.ingredients || []).forEach((it, i) => { h += renderEditableRow(it, i, 'recipe'); });
   h += '</div><button class="btn btn-secondary" data-act="recipe-add-ingredient">+ Add ingredient</button></div>';
@@ -2612,13 +2722,27 @@ function recipeSaveDraft(){
   if (d.portions === '' || !isFinite(portions) || portions <= 0){ toast('⚠️ Portions must be a number above 0'); return; }
   const bad = foodRowsError(d.ingredients || [], 'Ingredient');
   if (bad){ toast('⚠️ ' + bad); return; }
-  const ingredients = (d.ingredients || []).map(it => ({
-    id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Ingredient',
-    kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
-    fatG: foodNum(it.fatG), grams: foodNum(it.grams)
-  }));
-  if (d.id) updateRecipe(d.id, { name: name, portions: portions, ingredients: ingredients });
-  else addRecipe(name, portions, ingredients);
+  // Optional numbers: blank = not set; otherwise must be above 0.
+  const optPos = (v, max) => { if (v === '' || v == null) return null; const n = Number(v); return (isFinite(n) && n > 0 && n <= max) ? n : NaN; };
+  const cooked = optPos(d.cookedWeightG, 100000);
+  if (Number.isNaN(cooked)){ toast('⚠️ Cooked weight must be a number above 0 (grams), or blank'); return; }
+  for (const it of (d.ingredients || [])){
+    if (Number.isNaN(optPos(it.portions, 1000))){ toast('⚠️ ' + ((it.name || '').trim() || 'Ingredient') + ': portions must be above 0, or blank'); return; }
+  }
+  // Keep fields beyond the known ones (same reason as mealSaveDraft).
+  const ingredients = (d.ingredients || []).map(it => {
+    const ing = Object.assign({}, it, {
+      id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Ingredient',
+      kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
+      fatG: foodNum(it.fatG), grams: foodNum(it.grams)
+    });
+    const p = optPos(it.portions, 1000);
+    if (p) ing.portions = p; else delete ing.portions;
+    return ing;
+  });
+  const patch = { name: name, portions: portions, ingredients: ingredients, cookedWeightG: cooked || undefined };
+  if (d.id) updateRecipe(d.id, patch);
+  else addRecipe(name, portions, ingredients, cooked ? { cookedWeightG: cooked } : null);
   window._recipeEditor = null;
   closeModal();
 }
@@ -2683,6 +2807,10 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'add-saved-meal': openAddSavedMealModal(); break;
     case 'log-recipe': logRecipe(id); break;
+    case 'log-recipe-amount': openRecipeLog(id); break;
+    case 'recipe-log-mode': setRecipeLogMode(el.dataset.mode); break;
+    case 'recipe-log-confirm': recipeLogConfirm(); break;
+    case 'recipe-log-cancel': window._recipeLog = null; closeModal(); break;
     case 'edit-recipe': openRecipeEditor(id); break;
     case 'delete-recipe': deleteRecipe(id); break;
     case 'add-recipe': openRecipeEditor(null); break;
@@ -2725,6 +2853,11 @@ function handleFoodInput(e){
   else if (k === 'goal-kcal' || k === 'goal-proteinG'){ if (window._goalsEditor) window._goalsEditor[k.slice(5)] = t.value; }
   else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
   else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }
+  else if (k === 'recipe-cooked'){ if (window._recipeEditor) window._recipeEditor.cookedWeightG = t.value; }
+  else if (k === 'recipe-log-value'){
+    // Update only the preview line, not the whole sheet, so the input keeps focus while typing.
+    if (window._recipeLog){ window._recipeLog.value = t.value; const p = document.getElementById('recipe-log-preview'); if (p) p.innerHTML = recipeLogPreviewText(); }
+  }
   else if (k.indexOf('ing-') === 0){
     const it = window._recipeEditor && window._recipeEditor.ingredients && window._recipeEditor.ingredients[idx];
     if (it) it[k.slice(4)] = t.value;
@@ -2796,7 +2929,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v40',
+    appVersion: 'v41',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));

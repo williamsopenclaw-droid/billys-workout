@@ -302,6 +302,75 @@ eq(g2.run("food.goals"),{kcal:2400,proteinG:170,carbsG:250});
 eq(JSON.parse(g2.memory.get('caprica_workout_v2')).food.goals,{kcal:2400,proteinG:170,carbsG:250});
 ok(g2.run("renderFoodToday()").includes(' / 2400'));
 eq(app('2026-09-23',JSON.parse(g2.memory.get('caprica_workout_v2'))).run("food.goals.kcal"),2400);
+// --- Recipe partial portions ---
+const rp=app('2026-09-23');
+const clickR=(act,data={})=>rp.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+rp.run("addRecipe('Stir-fry',8,[{id:'b',name:'Beef',kcal:1600,proteinG:160,grams:1200},{id:'r',name:'Rice',kcal:700,proteinG:14,portions:7},{id:'o',name:'Oil',kcal:240}],{cookedWeightG:2400});"
+ +"addRecipe('Chili',10,[{name:'Turkey',kcal:2000,proteinG:300}])");
+const SF=rp.run("food.recipes[0].id"), CH=rp.run("food.recipes[1].id");
+// Per-portion maths honours an ingredient's own portion count (rice made 7, not 8).
+eq(rp.run("recipePerPortion(food.recipes[0])"),{kcal:330,proteinG:22,carbsG:0,fatG:0});
+eq(rp.run("recipePortionWeight(food.recipes[0])"),300);
+ok(rp.run("renderFoodRecipes()").includes('330 kcal · 22g P / portion'));
+ok(rp.run("renderFoodRecipes()").includes('≈300 g each'));
+ok(rp.run("renderFoodRecipes()").includes('data-act=\"log-recipe-amount\"'));
+// The one-tap button still logs exactly one portion.
+clickR('log-recipe',{id:SF});
+eq(rp.run("food.mealsByDay['2026-09-23'][0].name"),'Stir-fry (1 portion)');
+eq(rp.run("mealMacros(food.mealsByDay['2026-09-23'][0]).kcal"),330);
+// Portions: 1.5 of the batch.
+clickR('log-recipe-amount',{id:SF}); rp.run("window._recipeLog.value='1.5'");
+ok(rp.run("recipeLogPreviewText()").includes('495 kcal'));
+clickR('recipe-log-confirm');
+eq(rp.run("[food.mealsByDay['2026-09-23'][1].name,mealMacros(food.mealsByDay['2026-09-23'][1]).kcal]"),['Stir-fry (1.5 portions)',495]);
+eq(rp.run("food.mealsByDay['2026-09-23'][1].recipe"),{id:SF,portions:1.5});
+eq(rp.run("window._recipeLog"),null);
+// Grams: 375 g of a 300 g-per-portion batch = 1.25 portions.
+clickR('log-recipe-amount',{id:SF}); clickR('recipe-log-mode',{mode:'grams'});
+eq(rp.run("window._recipeLog.value"),'300');                                  // 1 portion carried across as grams
+rp.run("window._recipeLog.value='375'");
+ok(rp.run("recipeLogPreviewText()").includes('= 1.25 portions'));
+ok(rp.run("recipeLogPreviewText()").includes('413 kcal'));
+clickR('recipe-log-confirm');
+const g375=rp.run("food.mealsByDay['2026-09-23'][2]");
+eq([g375.name,g375.recipe],['Stir-fry (375 g)',{id:SF,portions:1.25,grams:375}]);
+eq(g375.items.map(i=>[i.name,i.kcal]),[['Beef',250],['Rice',125],['Oil',37.5]]);
+// Switching modes keeps the amount.
+clickR('log-recipe-amount',{id:SF}); rp.run("window._recipeLog.value='1.5'");
+clickR('recipe-log-mode',{mode:'grams'}); eq(rp.run("window._recipeLog.value"),'450');
+clickR('recipe-log-mode',{mode:'portions'}); eq(rp.run("window._recipeLog.value"),'1.5');
+clickR('recipe-log-cancel');
+// Grams need a cooked weight; bad amounts are refused and nothing is logged.
+clickR('log-recipe-amount',{id:CH}); clickR('recipe-log-mode',{mode:'grams'});
+ok(rp.el('modal').innerHTML.includes('Weigh the whole cooked batch'));
+rp.run("window._recipeLog.value='300'"); clickR('recipe-log-confirm');
+ok(rp.run("recipeLogAmount().error").includes('cooked weight'));
+for (const [mode,v,msg] of [['portions','0','above 0'],['portions','-1','above 0'],['portions','abc','above 0'],['portions','21','more than 20'],['portions','','above 0'],['grams','6000','more than 5000']]){
+  rp.run("window._recipeLog={id:'"+(mode==='grams'?SF:CH)+"',mode:'"+mode+"',value:"+JSON.stringify(v)+"}");
+  ok(rp.run("recipeLogAmount().error").includes(msg));                       // the user is told why
+  clickR('recipe-log-confirm');
+  ok(rp.el('toast').textContent.includes(msg));
+}
+eq(rp.run("food.mealsByDay['2026-09-23'].length"),3);
+// Logging goes to the day being viewed.
+rp.run("setFoodDay('2026-09-22');window._recipeLog={id:'"+CH+"',mode:'portions',value:'0.5'}"); clickR('recipe-log-confirm');
+eq(rp.run("[food.mealsByDay['2026-09-22'][0].name,mealMacros(food.mealsByDay['2026-09-22'][0]).kcal]"),['Chili (0.5 portions)',100]);
+// Editor: cooked weight and per-ingredient portions are validated, saved, and clearable; other fields kept.
+rp.run("openRecipeEditor('"+SF+"')");
+ok(rp.el('modal').innerHTML.includes('data-input="recipe-cooked"') && rp.el('modal').innerHTML.includes('value="2400"'));
+ok(rp.el('modal').innerHTML.includes('data-input="ing-portions" data-index="1"'));
+rp.run("window._recipeEditor.cookedWeightG='-5';recipeSaveDraft()"); eq(rp.run("food.recipes[0].cookedWeightG"),2400);
+rp.run("window._recipeEditor.cookedWeightG='2000';window._recipeEditor.ingredients[1].portions='0';recipeSaveDraft()"); eq(rp.run("food.recipes[0].cookedWeightG"),2400);
+rp.run("window._recipeEditor.ingredients[1].portions='7';window._recipeEditor.ingredients[0].futureField=1;recipeSaveDraft()");
+eq(rp.run("[food.recipes[0].cookedWeightG,food.recipes[0].ingredients.map(i=>i.portions),food.recipes[0].ingredients[0].futureField]"),[2000,[null,7,null],1]);   // eq() round-trips through JSON: unset shows as null
+rp.run("openRecipeEditor('"+SF+"');window._recipeEditor.cookedWeightG='';window._recipeEditor.ingredients[1].portions='';recipeSaveDraft()");
+const savedR=JSON.parse(rp.memory.get('caprica_workout_v2')).food.recipes[0];
+eq(['cookedWeightG' in savedR,'portions' in savedR.ingredients[1]],[false,false]);
+rp.run("openRecipeEditor(null);window._recipeEditor.name='New';window._recipeEditor.cookedWeightG='1800';window._recipeEditor.ingredients=[{name:'X',kcal:'900'}];recipeSaveDraft()");
+eq(rp.run("food.recipes[2].cookedWeightG"),1800);
+// Old recipes (no cooked weight, no ingredient portions) behave exactly as before.
+eq(rp.run("recipePerPortion(food.recipes[1]).kcal"),200);
+
 (async()=>{
   // --- Gate 3: food-photo function ---
   const {pathToFileURL}=require('node:url');
@@ -421,5 +490,5 @@ eq(app('2026-09-23',JSON.parse(g2.memory.get('caprica_workout_v2'))).run("food.g
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, sync-merge, navigation, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, sync-merge, navigation, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});

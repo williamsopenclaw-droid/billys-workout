@@ -14,6 +14,17 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v41: recipe partial portions
+
+- **Log any amount.** Recipe cards have **Log 1 portion** (unchanged) and **Log amount…**, a sheet with Portions / Grams, a live macro preview, and limits (0 < portions ≤ 20, 0 < grams ≤ 5000). Everything goes through `logRecipeAmount(id, portions, grams)`, which logs to `foodDay()` and records `meal.recipe = {id, portions, grams?}` (additive).
+- **Per-ingredient portion count** (`ing.portions`, optional): an ingredient divides by its own count instead of the recipe's — the beef & cabbage stir-fry makes 8 portions but its rice made 7. `recipeScaledItems(r, n)` takes `n / ingPortions` of each ingredient; `recipePerPortion()` drives the card.
+- **By weight** needs `r.cookedWeightG`, the cooked weight of the whole batch, weighed once. grams ÷ (cooked ÷ portions) = portions, then the same maths. Raw ingredient grams can't stand in for this, so the Grams tab explains instead of guessing when it's missing.
+- Old recipes (no cooked weight, no ingredient portions) compute exactly as before. The recipe editor now keeps unknown ingredient fields on save (same fix as meals in v40), and blank cooked weight / ingredient portions remove the field.
+
+Tests: 250 assertions; 16 mutations, all caught (one — accepting 0 — only after adding a check that the user is told why).
+
+---
+
 ## September 23, 2026 update — v40, Gate 3: AI photo estimates
 
 **Flow.** Meal editor → 📷 Estimate from photo (+ optional description) → the phone resizes to ≤1280 px JPEG (`compressPhoto()`, typically 0.2–0.5 MB, strips metadata) → `POST /api/analyze-food` → the result is loaded into the **open editor as ordinary editable rows** (`applyAiResult()`), replacing only an untouched starter row, with a banner plus the model's assumptions and warnings. **Nothing is saved until the user taps Save — never write an AI result directly.** Saved items keep `source: 'ai'` + `confidence`; the meal gets `aiAssisted: true` (additive). The photo is never stored or synced. A result that arrives after the editor was closed is dropped.
@@ -311,7 +322,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v40 Gate 3 commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v40 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v41 recipe-portions commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v41 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 
