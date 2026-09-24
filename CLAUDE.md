@@ -14,6 +14,23 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v45: import saved meals
+
+**Why it exists:** Claude can't write into William's data (it lives on his devices and behind his sync code, which Claude must not use). Import is the hand-off: Claude prepares text, William pastes it in the app (on any device — sync carries it to the others).
+
+**Saved tab → ⤓ Import saved meals** → paste text or Choose file → **Check** (preview: each meal marked New or Replace, with item count, kcal and protein) → **Import N saved meals**. Format — also documented in the code above `parseSavedMealsImport()`:
+
+```json
+{ "savedMeals": [ { "name": "Breakfast coffee", "category": "Breakfast",
+    "items": [ { "name": "Whey isolate (1 scoop)", "kcal": 120, "proteinG": 27, "carbsG": 2, "fatG": 0.5, "grams": 32 } ] } ] }
+```
+
+A bare array works too. `category` may be a label ("After Work / Workout") or id (`post-workout`); `protein`/`carbs`/`fat` are accepted aliases; missing numbers are 0. Rules: JSON.parse only; **all-or-nothing** with specific messages ("Meal 2 ("A"), item 1: kcal must be a number from 0 to 10000"); limits 50 meals, 30 items each, 200k chars, per-item caps; duplicate names within one import rejected. **A name matching an existing saved meal (case-insensitive) replaces it in place** — id and unknown fields kept — so pasting the same text twice doesn't duplicate. Apply re-parses the current text, and editing the text clears the preview. Logged meals are never touched. When giving William import text, put mL amounts in the item name (the `grams` field is grams).
+
+Tests: 376 assertions — the fixture is the exact three-meal text given to William on 2026-09-23. 19 mutations, all caught.
+
+---
+
 ## September 23, 2026 update — v44: new saved meal from scratch
 
 **+ New saved meal** on the Saved tab opens the same saved-mode editor empty (`openSavedMealEditor(null)`, `savedId: null`); Save calls `addSavedMeal()` and logs nothing. Same rules: a name or category, at least one item, validated numbers. "+ Saved Meal from Recent" is still there as the second button.
@@ -344,7 +361,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v44 new-saved-meal commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v44 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v45 saved-meal-import commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v45 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

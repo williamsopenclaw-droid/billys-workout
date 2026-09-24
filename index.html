@@ -315,6 +315,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-chip-del:active{color:var(--red)}
 .food-chip-edit{color:var(--muted);font-size:16px;line-height:1;padding:6px 8px;flex-shrink:0}
 .food-chip-edit:active{color:var(--accent)}
+/* v45: import saved meals */
+.food-import-text{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical;margin-bottom:8px}
+.food-import-actions{display:flex;gap:8px}.food-import-actions .btn{flex:1}
+.food-import-list{margin:6px 0 0;padding-left:18px}
+.food-import-preview{background:var(--card);border-radius:10px;padding:10px;margin:10px 0}
+.food-import-row{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border)}
+.food-import-row:first-of-type{border-top:none}
+.food-import-tag{font-size:10px;font-weight:700;padding:3px 6px;border-radius:6px;background:var(--green);color:var(--bg);flex-shrink:0;margin-top:2px}
+.food-import-tag.upd{background:var(--accent)}
 .food-recipe-actions{display:flex;gap:6px;margin-top:8px}
 .food-recipe-actions .mini-btn{flex:1}
 .food-editor-items{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
@@ -1346,7 +1355,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v44 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v45 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2146,7 +2155,8 @@ function renderFoodSaved(){
     h += '</div>';
   }
   h += '<button class="btn btn-primary" data-act="new-saved-meal" style="margin-top:14px">+ New saved meal</button>';
-  h += '<button class="btn btn-secondary" data-act="add-saved-meal">+ Saved Meal from Recent</button></div>';
+  h += '<button class="btn btn-secondary" data-act="add-saved-meal">+ Saved Meal from Recent</button>';
+  h += '<button class="btn btn-secondary" data-act="import-saved-meals">⤓ Import saved meals</button></div>';
   return h;
 }
 
@@ -2476,6 +2486,172 @@ function updateSavedMeal(id, patch){
   saveState(); render();
   return true;
 }
+
+// ---- Import saved meals (v45) ----
+// Paste (or pick a file of) JSON like:
+//   { "savedMeals": [ { "name": "Breakfast coffee", "category": "Breakfast",
+//       "items": [ { "name": "Whey", "kcal": 120, "proteinG": 27, "carbsG": 2, "fatG": 0.5, "grams": 32 } ] } ] }
+// A bare array of meals works too. Category may be an id or a label; protein/carbs/fat
+// are accepted as aliases. Parsed with JSON.parse only, checked strictly, all-or-nothing,
+// previewed, and applied only on confirm. A meal whose name matches an existing saved
+// meal (case-insensitive) updates it in place, so importing twice doesn't duplicate.
+// Logged meals are never touched.
+const IMPORT_LIMITS = { chars: 200000, meals: 50, items: 30, name: 80,
+                        kcal: 10000, proteinG: 1000, carbsG: 1000, fatG: 1000, grams: 10000 };
+function resolveCategory(v){
+  if (v == null || v === '') return { id: '' };
+  if (categoryById(v)) return { id: v };
+  const n = catNorm(v);
+  const byLabel = MEAL_CATEGORIES.find(c => catNorm(c.label) === n);
+  if (byLabel) return { id: byLabel.id };
+  if (CATEGORY_ALIASES[n]) return { id: CATEGORY_ALIASES[n] };
+  return { error: 'unknown category "' + String(v).slice(0, 40) + '"' };
+}
+function parseSavedMealsImport(text){
+  const errors = [];
+  if (typeof text !== 'string' || !text.trim()) return { errors: ['Nothing to import — paste the text first.'] };
+  if (text.length > IMPORT_LIMITS.chars) return { errors: ['That\'s too much text to import at once.'] };
+  let data;
+  try { data = JSON.parse(text); } catch (e) { return { errors: ['That isn\'t valid import text (it must be JSON).'] }; }
+  const list = Array.isArray(data) ? data : (data && Array.isArray(data.savedMeals) ? data.savedMeals : null);
+  if (!list) return { errors: ['Expected a list of saved meals ("savedMeals": [ … ]).'] };
+  if (!list.length) return { errors: ['The list is empty.'] };
+  if (list.length > IMPORT_LIMITS.meals) return { errors: ['At most ' + IMPORT_LIMITS.meals + ' meals at a time.'] };
+  const meals = [];
+  const seen = new Set();
+  list.forEach((m, mi) => {
+    const where = 'Meal ' + (mi + 1);
+    if (!m || typeof m !== 'object' || Array.isArray(m)){ errors.push(where + ': not a meal.'); return; }
+    const cat = resolveCategory(m.category);
+    if (cat.error){ errors.push(where + ': ' + cat.error + '.'); return; }
+    const rawName = typeof m.name === 'string' ? m.name.replace(/\s+/g, ' ').trim() : '';
+    const name = rawName.slice(0, IMPORT_LIMITS.name) || (cat.id ? categoryLabel(cat.id) : '');
+    const label = where + (name ? ' ("' + name + '")' : '');
+    if (!name){ errors.push(label + ': needs a name or a category.'); return; }
+    const key = name.toLowerCase();
+    if (seen.has(key)){ errors.push(label + ': the same name appears twice in this import.'); return; }
+    seen.add(key);
+    if (!Array.isArray(m.items) || !m.items.length){ errors.push(label + ': needs at least one item.'); return; }
+    if (m.items.length > IMPORT_LIMITS.items){ errors.push(label + ': more than ' + IMPORT_LIMITS.items + ' items.'); return; }
+    const items = [];
+    for (let ii = 0; ii < m.items.length; ii++){
+      const it = m.items[ii];
+      const at = label + ', item ' + (ii + 1);
+      if (!it || typeof it !== 'object' || Array.isArray(it)){ errors.push(at + ': not an item.'); return; }
+      const out = { id: foodUid('i'),
+        name: (typeof it.name === 'string' ? it.name.replace(/\s+/g, ' ').trim().slice(0, IMPORT_LIMITS.name) : '') || 'Item' };
+      const src = { kcal: it.kcal, proteinG: it.proteinG != null ? it.proteinG : it.protein,
+                    carbsG: it.carbsG != null ? it.carbsG : it.carbs, fatG: it.fatG != null ? it.fatG : it.fat, grams: it.grams };
+      for (const k of Object.keys(src)){
+        const v = src[k];
+        if (v == null || v === ''){ out[k] = 0; continue; }
+        const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+        if (!isFinite(n) || n < 0 || n > IMPORT_LIMITS[k]){ errors.push(at + ': ' + FOOD_FIELDS[k] + ' must be a number from 0 to ' + IMPORT_LIMITS[k] + '.'); return; }
+        out[k] = foodRound1(n);
+      }
+      items.push(out);
+    }
+    const existing = (food.savedMeals || []).find(s => (s.name || '').trim().toLowerCase() === key);
+    meals.push({ name, category: cat.id, items, replacesId: existing ? existing.id : null });
+  });
+  return errors.length ? { errors } : { meals };
+}
+function openImportSavedMeals(){
+  window._importSaved = { text: '', result: null };
+  renderImportSaved();
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function renderImportSaved(){
+  const d = window._importSaved;
+  if (!d) return;
+  let h = '<h2>Import saved meals</h2>'
+    + '<div class="food-hint">Paste import text, or choose a file. You\'ll see exactly what will change before anything is saved.</div>';
+  h += '<textarea class="form-input food-import-text" data-input="import-text" rows="7" placeholder="{ &quot;savedMeals&quot;: [ … ] }">' + esc(d.text) + '</textarea>';
+  h += '<input type="file" accept=".json,.txt,application/json,text/plain" data-input="import-file" class="food-import-file" hidden>';
+  h += '<div class="food-import-actions"><button class="btn btn-secondary" data-act="import-pick-file">Choose file</button>'
+    + '<button class="btn btn-secondary" data-act="import-check">Check</button></div>';
+  h += '<div id="import-result">' + renderImportResult(d) + '</div>';
+  h += '<button class="btn btn-secondary" data-act="import-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+}
+// The preview/errors/Import button live in their own container so editing the
+// text can clear them without replacing the textarea (which would lose the cursor).
+function renderImportResult(d){
+  let h = '';
+  const r = d.result;
+  if (r && r.errors){
+    h += '<div class="food-ai-error"><b>Nothing will be imported:</b><ul class="food-import-list">'
+      + r.errors.slice(0, 12).map(e => '<li>' + esc(e) + '</li>').join('')
+      + (r.errors.length > 12 ? '<li>…and ' + (r.errors.length - 12) + ' more</li>' : '') + '</ul></div>';
+  } else if (r && r.meals){
+    const n = r.meals.length, upd = r.meals.filter(m => m.replacesId).length;
+    h += '<div class="food-import-preview"><div class="food-hint">' + (n - upd) + ' new · ' + upd + ' will replace a saved meal with the same name</div>';
+    r.meals.forEach(m => {
+      const t = mealMacros(m);
+      h += '<div class="food-import-row"><span class="food-import-tag' + (m.replacesId ? ' upd' : '') + '">' + (m.replacesId ? 'Replace' : 'New') + '</span>'
+        + '<div><div class="food-chip-name">' + esc(m.name) + '</div><div class="food-chip-stats">'
+        + (m.category ? esc(categoryLabel(m.category)) + ' · ' : '') + m.items.length + ' item' + (m.items.length === 1 ? '' : 's') + ' · '
+        + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div></div>';
+    });
+    h += '</div><button class="btn btn-primary" data-act="import-apply">Import ' + n + ' saved meal' + (n === 1 ? '' : 's') + '</button>';
+  }
+  return h;
+}
+function importCheck(){
+  const d = window._importSaved;
+  if (!d) return;
+  d.result = parseSavedMealsImport(d.text);
+  renderImportSaved();
+}
+function importApply(){
+  const d = window._importSaved;
+  if (!d) return;
+  // Re-check against the data as it is now (a sync could have landed since Check).
+  const r = parseSavedMealsImport(d.text);
+  if (!r.meals){ d.result = r; renderImportSaved(); return; }
+  food.savedMeals = food.savedMeals || [];
+  let added = 0, updated = 0;
+  r.meals.forEach(m => {
+    const i = m.replacesId ? food.savedMeals.findIndex(s => s.id === m.replacesId) : -1;
+    if (i >= 0){
+      const next = Object.assign({}, food.savedMeals[i], { name: m.name, items: m.items, category: m.category });
+      if (!categoryById(next.category)) delete next.category;
+      food.savedMeals[i] = next; updated++;
+    } else {
+      const s = { id: foodUid('s'), name: m.name, items: m.items };
+      if (categoryById(m.category)) s.category = m.category;
+      food.savedMeals.push(s); added++;
+    }
+  });
+  saveState();
+  window._importSaved = null;
+  closeModal();
+  toast('Imported: ' + added + ' new, ' + updated + ' updated');
+}
+function importPickFile(){
+  const input = document.querySelector('#modal .food-import-file');
+  if (input) input.click();
+}
+function onImportFileChosen(input){
+  const d = window._importSaved;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!d || !file) return;
+  if (file.size > IMPORT_LIMITS.chars){ d.result = { errors: ['That file is too large to import.'] }; renderImportSaved(); return; }
+  const reader = new FileReader();
+  reader.onerror = () => { d.result = { errors: ['Couldn\'t read that file.'] }; renderImportSaved(); };
+  reader.onload = () => {
+    if (window._importSaved !== d) return;
+    d.text = String(reader.result || '');
+    d.result = parseSavedMealsImport(d.text);
+    renderImportSaved();
+  };
+  reader.readAsText(file);
+}
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t && t.dataset && t.dataset.input === 'import-file') onImportFileChosen(t);
+});
 
 function renderMealEditor(){
   const d = window._mealEditor;
@@ -2854,6 +3030,11 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'new-saved-meal': openSavedMealEditor(null); break;
+    case 'import-saved-meals': openImportSavedMeals(); break;
+    case 'import-pick-file': importPickFile(); break;
+    case 'import-check': importCheck(); break;
+    case 'import-apply': importApply(); break;
+    case 'import-cancel': window._importSaved = null; closeModal(); break;
     case 'add-saved-meal': openAddSavedMealModal(); break;
     case 'log-recipe': logRecipe(id); break;
     case 'log-recipe-amount': openRecipeLog(id); break;
@@ -2903,6 +3084,11 @@ function handleFoodInput(e){
   else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
   else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }
   else if (k === 'recipe-cooked'){ if (window._recipeEditor) window._recipeEditor.cookedWeightG = t.value; }
+  else if (k === 'import-text'){
+    // Editing the text invalidates the last Check (the preview no longer matches it).
+    const d = window._importSaved;
+    if (d){ d.text = t.value; if (d.result){ d.result = null; const box = document.getElementById('import-result'); if (box) box.innerHTML = ''; } }
+  }
   else if (k === 'recipe-log-value'){
     // Update only the preview line, not the whole sheet, so the input keeps focus while typing.
     if (window._recipeLog){ window._recipeLog.value = t.value; const p = document.getElementById('recipe-log-preview'); if (p) p.innerHTML = recipeLogPreviewText(); }
@@ -2978,7 +3164,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v44',
+    appVersion: 'v45',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));

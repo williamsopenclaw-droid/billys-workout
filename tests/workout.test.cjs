@@ -436,6 +436,78 @@ eq(sm.run("window._mealEditor"),null);
 clickS('log-saved-meal',{id:sm.run("food.savedMeals[1].id")});
 eq(sm.run("food.mealsByDay['2026-09-23'].slice(-1).map(m=>[m.category,mealMacros(m).kcal])"),[['pm-snack',160]]);
 
+// --- Import saved meals ---
+const im=app('2026-09-23');
+const clickI=(act,data={})=>im.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+const typeI=v=>im.run("handleFoodInput({target:{dataset:{input:'import-text'},value:"+JSON.stringify(v)+"}})");
+// The exact text handed to William for his three daily meals.
+const THREE={savedMeals:[
+ {name:'Breakfast coffee',category:'Breakfast',items:[{name:'Whey isolate, vanilla (1 scoop)',kcal:120,proteinG:27,carbsG:2,fatG:0.5,grams:32},{name:'Creatine',kcal:0,grams:5},{name:'Silk protein almond/cashew, 60 mL',kcal:22,proteinG:1.9},{name:'International Delight Zero, 40 mL',kcal:40}]},
+ {name:'Banana + Premier Protein',category:'Morning Snack',items:[{name:'Banana, medium',kcal:105,proteinG:1.3,carbsG:27,fatG:0.4,grams:118},{name:'Premier Protein Chocolate',kcal:160,proteinG:30,carbsG:4,fatG:3}]},
+ {name:'Post-workout shake',category:'After Work / Workout',items:[{name:'Whey isolate, vanilla (1 scoop)',kcal:120,proteinG:27,carbsG:2,fatG:0.5,grams:32},{name:'Silk protein almond/cashew, 250 mL',kcal:90,proteinG:8},{name:'Water, 125 mL',kcal:0},{name:'Gatorade Zero',kcal:10}]}]};
+im.run("addMealToDay('2026-09-23',{id:'keep',name:'Lunch',category:'lunch',items:[{name:'Rice',kcal:195}]})");
+const loggedI=im.run("JSON.stringify(food.mealsByDay)");
+ok(im.run("renderFoodSaved()").includes('data-act=\"import-saved-meals\"'));
+clickI('import-saved-meals'); ok(im.el('modal').innerHTML.includes('Import saved meals'));
+typeI(JSON.stringify(THREE,null,1)); clickI('import-check');
+eq(im.run("window._importSaved.result.meals.map(m=>[m.name,m.category,m.replacesId,Math.round(mealMacros(m).kcal)])"),
+  [['Breakfast coffee','breakfast',null,182],['Banana + Premier Protein','am-snack',null,265],['Post-workout shake','post-workout',null,220]]);
+ok(im.el('modal').innerHTML.includes('3 new · 0 will replace')); ok(im.el('modal').innerHTML.includes('Import 3 saved meals'));
+eq(im.run("(food.savedMeals||[]).length"),0);                                    // Check saves nothing
+clickI('import-apply');
+eq(im.run("food.savedMeals.map(s=>[s.name,s.category,Math.round(mealMacros(s).kcal),Math.round(mealMacros(s).proteinG)])"),
+  [['Breakfast coffee','breakfast',182,29],['Banana + Premier Protein','am-snack',265,31],['Post-workout shake','post-workout',220,35]]);
+ok(im.el('toast').textContent.includes('3 new, 0 updated'));
+eq(JSON.parse(im.memory.get('caprica_workout_v2')).food.savedMeals.length,3);       // persisted (and so synced)
+eq(im.run("JSON.stringify(food.mealsByDay)"),loggedI);                            // logged meals untouched
+eq(im.run("window._importSaved"),null);
+// Importing again updates in place (case-insensitive name match): no duplicates, ids and extra fields kept.
+const idsI=JSON.parse(JSON.stringify(im.run("food.savedMeals.map(s=>s.id)"))); im.run("food.savedMeals[0].futureKey='kept'");
+const again=JSON.parse(JSON.stringify(THREE)); again.savedMeals[0].name='BREAKFAST COFFEE'; again.savedMeals[0].items[0].kcal=130;
+clickI('import-saved-meals'); typeI(JSON.stringify(again)); clickI('import-check');
+ok(im.el('modal').innerHTML.includes('0 new · 3 will replace'));
+clickI('import-apply');
+eq(im.run("[food.savedMeals.length,food.savedMeals.map(s=>s.id),food.savedMeals[0].name,food.savedMeals[0].items[0].kcal,food.savedMeals[0].futureKey]"),
+  [3,idsI,'BREAKFAST COFFEE',130,'kept']);
+ok(im.el('toast').textContent.includes('0 new, 3 updated'));
+// A bare array, category ids, numeric strings and protein/carbs/fat aliases are accepted.
+eq(im.run("parseSavedMealsImport("+JSON.stringify(JSON.stringify([{category:'dinner',items:[{name:'Soup',kcal:'150',protein:'9',carbs:12,fat:'4'}]}]))+").meals[0]").items.map(i=>[i.kcal,i.proteinG,i.carbsG,i.fatG]),[[150,9,12,4]]);
+eq(im.run("parseSavedMealsImport('[{\"category\":\"dinner\",\"items\":[{\"kcal\":1}]}]').meals[0].name"),'Dinner');   // category names it
+// Bad input: clear message, nothing imported (all-or-nothing).
+const badCases=[
+ ['',"Nothing to import"],['{not json',"valid import text"],['{"meals":[]}',"Expected a list"],['[]',"empty"],
+ ['[{"name":"A","category":"Brunch","items":[{"kcal":1}]}]','unknown category'],
+ ['[{"name":"A","items":[{"kcal":-5}]}]','kcal must be a number'],['[{"name":"A","items":[{"kcal":"abc"}]}]','kcal must be a number'],
+ ['[{"name":"A","items":[{"kcal":20000}]}]','from 0 to 10000'],['[{"name":"A","items":[]}]','at least one item'],
+ ['[{"items":[{"kcal":1}]}]','name or a category'],['[{"name":"A","items":[{"kcal":1}]},{"name":"a","items":[{"kcal":2}]}]','appears twice'],
+ ['[{"name":"A","items":["x"]}]','not an item'],['[5]','not a meal'],
+ [JSON.stringify(Array.from({length:51},(_,i)=>({name:'M'+i,items:[{kcal:1}]}))),'At most 50'],
+ ['x'.repeat(200001),'too much text'],
+ ['[{"name":"Good","items":[{"kcal":1}]},{"name":"Bad","items":[{"kcal":-1}]}]','Meal 2'],     // one bad meal blocks the good one
+];
+for (const [text,msg] of badCases){
+  const before=im.run("JSON.stringify(food.savedMeals)");
+  clickI('import-saved-meals'); typeI(text); clickI('import-check');
+  ok(im.run("window._importSaved.result.errors.join(' ')").includes(msg));
+  ok(im.el('modal').innerHTML.includes('Nothing will be imported'));
+  ok(!im.el('modal').innerHTML.includes('import-apply'));
+  clickI('import-apply');                                                        // even forced, nothing happens
+  eq(im.run("JSON.stringify(food.savedMeals)"),before);
+  clickI('import-cancel');
+}
+// Pasted text is escaped in the preview and in error messages.
+clickI('import-saved-meals'); typeI('[{"name":"<img src=x onerror=alert(1)>","items":[{"name":"<b>i</b>","kcal":1}]}]'); clickI('import-check');
+ok(!im.el('modal').innerHTML.includes('<img')); ok(im.el('modal').innerHTML.includes('&lt;img'));
+typeI('[{"name":"A","category":"<i>x</i>","items":[{"kcal":1}]}]'); clickI('import-check');
+ok(!im.el('modal').innerHTML.includes('<i>x</i>'));
+// Editing the text after Check clears the preview, and Import re-checks the current text.
+typeI(JSON.stringify(THREE)); clickI('import-check'); ok(im.el('modal').innerHTML.includes('import-apply'));
+im.el('import-result').innerHTML='stale preview'; typeI('{broken'); eq(im.el('import-result').innerHTML,''); eq(im.run("window._importSaved.result"),null);
+const beforeForced=im.run("JSON.stringify(food.savedMeals)");
+clickI('import-apply'); eq(im.run("JSON.stringify(food.savedMeals)"),beforeForced);
+ok(im.run("window._importSaved.result.errors[0]").includes('valid import text'));
+clickI('import-cancel'); eq(im.run("window._importSaved"),null);
+
 (async()=>{
   // --- Gate 3: food-photo function ---
   const {pathToFileURL}=require('node:url');
@@ -555,5 +627,5 @@ eq(sm.run("food.mealsByDay['2026-09-23'].slice(-1).map(m=>[m.category,mealMacros
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, sync-merge, navigation, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, sync-merge, navigation, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});
