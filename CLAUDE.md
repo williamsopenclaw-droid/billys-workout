@@ -14,6 +14,14 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v44: new saved meal from scratch
+
+**+ New saved meal** on the Saved tab opens the same saved-mode editor empty (`openSavedMealEditor(null)`, `savedId: null`); Save calls `addSavedMeal()` and logs nothing. Same rules: a name or category, at least one item, validated numbers. "+ Saved Meal from Recent" is still there as the second button.
+
+Tests: 287 assertions; 4 more mutations on this path, all caught.
+
+---
+
 ## September 23, 2026 update — v43: edit saved meals
 
 ✎ on each saved meal opens the **meal editor in saved mode** (`openSavedMealEditor()`, `_mealEditor.kind === 'saved'`) — same category chips, item rows and number checks, but no date, time, notes or photo. Save goes through `updateSavedMeal()`, which updates in place, keeps unknown fields, drops an invalid/cleared category, and refuses (rather than re-creating) a saved meal another device deleted meanwhile. At least one item is required. **Meals already logged from it are copies and don't change** — the sheet says so. Saved-meal chips now show their category.
@@ -336,7 +344,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v43 saved-meal-editing commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v43 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v44 new-saved-meal commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v44 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

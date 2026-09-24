@@ -1346,7 +1346,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v43 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v44 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2131,7 +2131,7 @@ function renderFoodHistory(){
 function renderFoodSaved(){
   let h = '<div class="food-saved">' + foodLoggingHint();
   if (!food.savedMeals || food.savedMeals.length === 0){
-    h += '<div class="food-empty">No saved meals yet. When you log a meal you can save it as a one-tap shortcut.</div>';
+    h += '<div class="food-empty">No saved meals yet. Build one below, or save one from a meal you\'ve logged, as a one-tap shortcut.</div>';
   } else {
     h += '<div class="food-chip-list">';
     food.savedMeals.forEach(s => {
@@ -2145,7 +2145,8 @@ function renderFoodSaved(){
     });
     h += '</div>';
   }
-  h += '<button class="btn btn-primary" data-act="add-saved-meal" style="margin-top:14px">+ Saved Meal from Recent</button></div>';
+  h += '<button class="btn btn-primary" data-act="new-saved-meal" style="margin-top:14px">+ New saved meal</button>';
+  h += '<button class="btn btn-secondary" data-act="add-saved-meal">+ Saved Meal from Recent</button></div>';
   return h;
 }
 
@@ -2454,10 +2455,11 @@ function renderEditableRow(it, i, mode){
 // Saved meals reuse the meal editor (same chips, rows and number checks) with
 // `kind: 'saved'`: no date, time, notes or photo, and Save writes the saved
 // meal. Meals already logged from it are copies and don't change.
+// id null = a brand-new saved meal, built from scratch.
 function openSavedMealEditor(id){
-  const s = (food.savedMeals || []).find(x => x.id === id);
+  const s = id ? (food.savedMeals || []).find(x => x.id === id) : { name: '', items: [] };
   if (!s) return;
-  window._mealEditor = { kind: 'saved', savedId: s.id, ds: foodDay(), name: s.name || '',
+  window._mealEditor = { kind: 'saved', savedId: id || null, ds: foodDay(), name: s.name || '',
     category: categoryById(s.category) ? s.category : '', time: '', notes: '',
     items: (s.items || []).map(it => Object.assign({}, it)) };
   if (!window._mealEditor.items.length) window._mealEditor.items = [blankItem()];
@@ -2479,7 +2481,8 @@ function renderMealEditor(){
   const d = window._mealEditor;
   if (!d) return;
   const saved = d.kind === 'saved';
-  let h = saved ? '<h2>Edit saved meal</h2><div class="food-hint">Changes apply the next time you log it. Meals already logged stay as they are.</div>'
+  let h = saved ? (d.savedId ? '<h2>Edit saved meal</h2><div class="food-hint">Changes apply the next time you log it. Meals already logged stay as they are.</div>'
+                             : '<h2>New saved meal</h2><div class="food-hint">A one-tap shortcut. Saving it doesn\'t log anything.</div>')
                 : '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + ' · ' + esc(fmtShort(d.ds)) + '</h2>';
   h += '<div class="form-group"><label class="form-label">Meal</label><div class="food-cat-chips">';
   MEAL_CATEGORIES.forEach(c => {
@@ -2532,7 +2535,8 @@ function mealSaveDraft(){
   })).filter(it => it.name !== 'Item' || it.kcal || it.proteinG || it.carbsG || it.fatG || it.grams);
   if (d.kind === 'saved'){
     if (!items.length){ toast('Add at least one item'); return; }
-    if (!updateSavedMeal(d.savedId, { name: name, category: category, items: items })){ toast('That saved meal no longer exists'); }
+    if (!d.savedId) addSavedMeal(name, items, category);             // toasts "Saved meal added"
+    else if (!updateSavedMeal(d.savedId, { name: name, category: category, items: items })){ toast('That saved meal no longer exists'); }
     else toast('Saved meal updated');
     window._mealEditor = null;
     closeModal();
@@ -2849,6 +2853,7 @@ function handleFoodClick(e){
     case 'log-saved-meal': logSavedMeal(id); break;
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
+    case 'new-saved-meal': openSavedMealEditor(null); break;
     case 'add-saved-meal': openAddSavedMealModal(); break;
     case 'log-recipe': logRecipe(id); break;
     case 'log-recipe-amount': openRecipeLog(id); break;
@@ -2973,7 +2978,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v43',
+    appVersion: 'v44',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));

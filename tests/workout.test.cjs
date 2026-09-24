@@ -416,6 +416,25 @@ eq(sm.run("food.savedMeals.length"),0); ok(sm.el('toast').textContent.includes('
 sm.run("addSavedMeal('Oats',[{name:'Oats',kcal:300}])"); clickS('edit-saved-meal',{id:sm.run("food.savedMeals[0].id")});
 sm.run("window._mealEditor.name='Changed'"); clickS('meal-cancel'); eq(sm.run("food.savedMeals[0].name"),'Oats');
 sm.run("openMealEditor('2026-09-23',null)"); ok(sm.el('modal').innerHTML.includes('data-input="meal-time"')); ok(sm.el('modal').innerHTML.includes('meal-photo'));
+// New saved meal from scratch: same saved-mode editor, empty; saving adds it and logs nothing.
+ok(sm.run("renderFoodSaved()").includes('data-act=\"new-saved-meal\"'));
+const loggedBefore=sm.run("JSON.stringify(food.mealsByDay)");
+clickS('new-saved-meal');
+ok(sm.el('modal').innerHTML.includes('New saved meal')); ok(!sm.el('modal').innerHTML.includes('data-input="meal-time"'));
+eq(sm.run("[window._mealEditor.kind,window._mealEditor.savedId,window._mealEditor.category,window._mealEditor.items.length]"),['saved',null,'',1]);
+sm.run("mealSaveDraft()"); ok(sm.el('toast').textContent.includes('Pick a meal'));      // no name, no category
+sm.run("window._mealEditor.name='Empty';mealSaveDraft()"); ok(sm.el('toast').textContent.includes('at least one item'));
+sm.run("window._mealEditor.items=[{name:'Greek yogurt',kcal:'-3'}];mealSaveDraft()"); eq(sm.run("food.savedMeals.length"),1);
+clickS('meal-cat',{cat:'pm-snack'});
+sm.run("window._mealEditor.name='';window._mealEditor.items=[{name:'Greek yogurt',kcal:'60',proteinG:'6'},{name:'Hummus',kcal:'100',proteinG:'3'}]"); clickS('meal-save');
+eq(sm.run("food.savedMeals.length"),2);
+eq(sm.run("[food.savedMeals[1].name,food.savedMeals[1].category,food.savedMeals[1].items.map(i=>[i.name,i.kcal])]"),['Afternoon Snack','pm-snack',[['Greek yogurt',60],['Hummus',100]]]);
+eq(sm.run("JSON.stringify(food.mealsByDay)"),loggedBefore);                         // nothing logged
+eq(JSON.parse(sm.memory.get('caprica_workout_v2')).food.savedMeals.length,2);           // persisted
+eq(sm.run("window._mealEditor"),null);
+// ...and it logs like any other saved meal.
+clickS('log-saved-meal',{id:sm.run("food.savedMeals[1].id")});
+eq(sm.run("food.mealsByDay['2026-09-23'].slice(-1).map(m=>[m.category,mealMacros(m).kcal])"),[['pm-snack',160]]);
 
 (async()=>{
   // --- Gate 3: food-photo function ---
