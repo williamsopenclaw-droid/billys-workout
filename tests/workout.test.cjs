@@ -233,6 +233,72 @@ day.run("window._recipeEditor.portions='8';window._recipeEditor.ingredients=[{na
 eq(day.run("food.recipes.length"),1);
 day.run("window._recipeEditor.ingredients=[{name:'Oil',kcal:'265',fatG:'30'}];recipeSaveDraft()");
 eq(day.run("food.recipes.length"),2);
+// --- Gate 2: meal categories and goals ---
+const g2=app('2026-09-23');
+const click2=(act,data={})=>g2.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+// New meals default by time of day today (test clock is 8am), and to no category on a past day.
+eq(g2.run("categoryForNow()"),'breakfast');
+g2.run("openMealEditor('2026-09-23',null)"); eq(g2.run("window._mealEditor.category"),'breakfast');
+g2.run("openMealEditor('2026-09-22',null)"); eq(g2.run("window._mealEditor.category"),'');
+ok(g2.el('modal').innerHTML.includes('data-cat="post-workout"'));
+// Chips select, and a second tap clears.
+click2('meal-cat',{cat:'lunch'}); eq(g2.run("window._mealEditor.category"),'lunch');
+click2('meal-cat',{cat:'lunch'}); eq(g2.run("window._mealEditor.category"),'');
+click2('meal-cat',{cat:'not-a-category'}); eq(g2.run("window._mealEditor.category"),'');
+// With no name and no category, nothing saves; a category alone names the meal.
+g2.run("window._mealEditor.items=[{name:'Stir-fry',kcal:'600',proteinG:'45'}];mealSaveDraft()");
+eq(g2.run("(food.mealsByDay['2026-09-22']||[]).length"),0);
+click2('meal-cat',{cat:'lunch'}); g2.run("mealSaveDraft()");
+eq(g2.run("food.mealsByDay['2026-09-22'].map(m=>[m.name,m.category])"),[['Lunch','lunch']]);
+// Day view groups in the fixed order; older meals without a category are grouped by
+// name ("Morning Snack") or under Other — at render time only, never rewritten.
+g2.run("addMealToDay('2026-09-22',{id:'d1',name:'Dinner',category:'dinner',items:[{name:'Rice',kcal:200}]});"
+ +"addMealToDay('2026-09-22',{id:'b1',name:'Breakfast',category:'breakfast',items:[{name:'Strawberries',kcal:24},{name:'Blueberries',kcal:43}]});"
+ +"addMealToDay('2026-09-22',{id:'s1',name:'Morning Snack',items:[{name:'Banana',kcal:105}]});"
+ +"addMealToDay('2026-09-22',{id:'o1',name:'Pizza',items:[{kcal:300}]});"
+ +"addMealToDay('2026-09-22',{id:'x1',name:'Odd',category:'<img src=x>',items:[]});"
+ +"addMealToDay('2026-09-22',{id:'w1',name:'After Work',items:[{name:'Gatorade Zero',kcal:0}]})");
+eq(g2.run("groupMealsByCategory(food.mealsByDay['2026-09-22']).map(g=>[g.id,g.meals.map(m=>m.id)])"),
+  [['breakfast',['b1']],['am-snack',['s1']],['lunch',[g2.run("food.mealsByDay['2026-09-22'][0].id")]],['post-workout',['w1']],['dinner',['d1']],['other',['o1','x1']]]);
+const stored=JSON.parse(g2.memory.get('caprica_workout_v2')).food.mealsByDay['2026-09-22'];
+eq(stored.find(m=>m.id==='s1').category,undefined);                        // legacy meal untouched
+g2.run("setFoodDay('2026-09-22')");
+const dayHtml=g2.run("renderFoodToday()");
+const order=['>Breakfast<','>Morning Snack<','>Lunch<','>After Work / Workout<','>Dinner<','>Other<'].map(s=>dayHtml.indexOf(s));
+ok(order.every((v,i)=>v>=0&&(i===0||v>order[i-1])));
+ok(!dayHtml.includes('<img src=x>'));
+ok(dayHtml.includes('Strawberries, Blueberries'));                          // item names shown under the category
+// History shows what was eaten, under each category.
+const hist=g2.run("renderFoodHistory()");
+ok(hist.includes('<b>Breakfast</b> Strawberries, Blueberries'));
+ok(hist.includes('<b>Morning Snack</b> Banana'));
+ok(hist.includes('<b>Other</b> Pizza; Odd'));
+// An older build's edit (patch without `category`) keeps the category.
+g2.run("updateMeal('2026-09-22','d1',{id:'d1',name:'Dinner',time:'',items:[{name:'Rice',kcal:250}],notes:''})");
+eq(g2.run("food.mealsByDay['2026-09-22'].find(m=>m.id==='d1').category"),'dinner');
+// Editing a legacy meal shows its inferred category and saves it for real.
+g2.run("openMealEditor('2026-09-22','s1')"); eq(g2.run("window._mealEditor.category"),'am-snack');
+g2.run("mealSaveDraft()"); eq(g2.run("food.mealsByDay['2026-09-22'].find(m=>m.id==='s1').category"),'am-snack');
+// Saved meals carry their category; recipes default by time today, none on a past day.
+g2.run("savedPick('b1')"); eq(g2.run("food.savedMeals[0].category"),'breakfast');
+g2.run("setFoodDay('2026-09-21');logSavedMeal(food.savedMeals[0].id)");
+eq(g2.run("food.mealsByDay['2026-09-21'][0].category"),'breakfast');
+g2.run("addRecipe('Chili',10,[{name:'Turkey',kcal:2000}]);logRecipe(food.recipes[0].id)");
+eq(g2.run("food.mealsByDay['2026-09-21'][1].category"),'');
+g2.run("setFoodDay(null);logRecipe(food.recipes[0].id)");
+eq(g2.run("food.mealsByDay['2026-09-23'][0].category"),'breakfast');
+// Goals: editable, validated, saved in the synced food slice, and unknown goal fields kept.
+g2.run("food.goals.carbsG=250"); click2('edit-goals');
+ok(g2.el('modal').innerHTML.includes('data-input="goal-kcal" value="2200"'));
+for (const [k,v] of [['kcal','22000'],['kcal',''],['kcal','abc'],['proteinG','-1'],['proteinG','600']]){
+  click2('edit-goals'); g2.run("window._goalsEditor."+k+"="+JSON.stringify(v)); click2('goals-save');
+  eq(g2.run("[food.goals.kcal,food.goals.proteinG]"),[2200,160]);
+}
+click2('edit-goals'); g2.run("window._goalsEditor.kcal='2400';window._goalsEditor.proteinG='170.4'"); click2('goals-save');
+eq(g2.run("food.goals"),{kcal:2400,proteinG:170,carbsG:250});
+eq(JSON.parse(g2.memory.get('caprica_workout_v2')).food.goals,{kcal:2400,proteinG:170,carbsG:250});
+ok(g2.run("renderFoodToday()").includes(' / 2400'));
+eq(app('2026-09-23',JSON.parse(g2.memory.get('caprica_workout_v2'))).run("food.goals.kcal"),2400);
 // Food-photo function: off unless the token is set, and every schema property is required (strict mode).
 (async()=>{
   const {pathToFileURL}=require('node:url');
@@ -249,5 +315,5 @@ eq(day.run("food.recipes.length"),2);
   eq(res.status,200);
   eq((await res.json()).totals.kcal,70); // totals recomputed from items, not trusted
   (function walk(s){ if(s&&s.type==='object'&&s.properties){ eq([...s.required].sort(),Object.keys(s.properties).sort()); Object.values(s.properties).forEach(walk);} if(s&&s.items) walk(s.items); })(sent.response_format.json_schema.schema);
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, sync-merge, navigation and food function.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, sync-merge, navigation and food function.');
 })().catch(e=>{console.error(e);process.exit(1);});

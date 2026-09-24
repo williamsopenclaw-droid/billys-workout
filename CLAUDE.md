@@ -14,6 +14,18 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v39, Gate 2: meal categories and editable goals
+
+- **Categories are stable ids on the meal** (`meal.category`: `breakfast`, `am-snack`, `lunch`, `pm-snack`, `post-workout`, `dinner`, `evening-snack`), defined once in `MEAL_CATEGORIES`. Store the id, never the label, so labels can be reworded freely. Unknown or junk ids read as Other.
+- **Additive, no migration.** Meals from before v39 have no `category` and are **never rewritten**: `mealCategory()` groups them at render time by name ("Breakfast", "After Work" …) or under Other. Editing and saving such a meal writes the category for real. Older builds keep the field on edit because `updateMeal()` merges with `Object.assign`.
+- **Defaults.** A new meal logged for today defaults by time of day (`categoryForNow()`, hour thresholds in `MEAL_CATEGORIES[].from`); a past day defaults to none. Saved meals remember their category; recipe portions take the time default today, none on a past day. A blank name takes the category label, so older builds still show "Breakfast".
+- **Day view groups by category** in the fixed order, with a subtotal per group; the card title is the item list when the name just repeats the category. **History lists what was eaten under each category.**
+- **Goals are editable** (Edit goals on the Day progress card), stored in `food.goals` so they sync. Validated as calories 500–10000 and protein 0–500 (typo guards, not advice), rounded to whole numbers; unknown goal fields are kept.
+
+Tests: 149 assertions. Thirteen Gate 2 mutations were each caught. One mutation (removing `esc()` on category headings) is undetectable because labels are fixed text — it's kept as a guard in case labels ever become editable.
+
+---
+
 ## September 23, 2026 update — v38, Gate 1a: sync you can trust, Food on any day
 
 William is developing Food in gates: **1** reliable manual Food (1a done here), **2** meal categories + editable goals, **3** AI photo analysis. Don't start a later gate's work early. His Sept 22–23 food log goes in through the app/data layer once macros are known — never hard-coded, and never with invented numbers.
@@ -283,7 +295,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v38 Gate 1a commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v38 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v39 Gate 2 commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v39 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

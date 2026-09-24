@@ -324,6 +324,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-hint{font-size:12px;color:var(--accent);margin-bottom:10px}
 .food-day-card{cursor:pointer}.food-day-card:active{background:var(--card)}
 .food-meal-del{padding:4px 8px;margin-right:-8px}
+/* v39: meal categories + goals */
+.food-cat-head{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin:6px 2px -2px}
+.food-cat-head span:last-child{text-transform:none;letter-spacing:0;color:var(--muted);font-weight:600}
+.food-meal-items{font-size:12px;color:var(--muted);margin-bottom:4px;line-height:1.35}
+.food-cat-chips{display:flex;flex-wrap:wrap;gap:6px}
+.food-cat-chip{font-family:inherit;font-size:13px;padding:8px 12px;border-radius:18px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.food-cat-chip.active{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:700}
+.food-progress-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.food-progress-foot .mini-btn{font-size:12px;padding:6px 10px}
+.food-progress-foot .food-remaining{margin-top:0}
+.food-day-cats{margin-top:6px;font-size:12px;color:var(--text);line-height:1.4}
+.food-day-cat b{color:var(--accent);font-weight:600;margin-right:2px}
 </style>
 </head>
 <body>
@@ -1314,7 +1326,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v38 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v39 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1913,14 +1925,65 @@ function progressBar(consumed, target, label, color){
   const pct = Math.min(100, Math.round(consumed / target * 100));
   return '<div class="food-bar"><div class="food-bar-row">'
     + '<span class="food-bar-label">' + label + '</span>'
-    + '<span class="food-bar-val">' + Math.round(consumed) + ' / ' + target + (color === 'protein' ? ' g' : '') + '</span></div>'
+    + '<span class="food-bar-val">' + Math.round(consumed) + ' / ' + esc(target) + (color === 'protein' ? ' g' : '') + '</span></div>'
     + '<div class="food-bar-track"><div class="food-bar-fill" style="width:' + pct + '%;background:var(--' + (color === 'protein' ? 'green' : 'accent') + ')"></div></div></div>';
 }
+// ---- Meal categories (v39) ----
+// Stored on the meal as a stable id (`meal.category`), never the label, so a
+// label can be reworded without touching saved data. The field is additive:
+// meals without it (everything before v39) are never rewritten — they're
+// grouped by name match ("Breakfast" → breakfast) or under Other, at render
+// time only. `from` is the hour a new meal logged today defaults to it.
+const MEAL_CATEGORIES = [
+  { id: 'breakfast',     label: 'Breakfast',            from: 4 },
+  { id: 'am-snack',      label: 'Morning Snack',        from: 9.5 },
+  { id: 'lunch',         label: 'Lunch',                from: 11.5 },
+  { id: 'pm-snack',      label: 'Afternoon Snack',      from: 14 },
+  { id: 'post-workout',  label: 'After Work / Workout', from: 16 },
+  { id: 'dinner',        label: 'Dinner',               from: 18 },
+  { id: 'evening-snack', label: 'Evening Snack',        from: 20.5 },
+];
+const OTHER_CATEGORY = { id: 'other', label: 'Other' };
+function catNorm(s){ return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
+const CATEGORY_ALIASES = { afterwork: 'post-workout', workout: 'post-workout', postworkout: 'post-workout',
+                           morningsnack: 'am-snack', afternoonsnack: 'pm-snack', eveningsnack: 'evening-snack' };
+function categoryById(id){ return MEAL_CATEGORIES.find(c => c.id === id) || null; }
+function mealCategory(meal){
+  if (meal && categoryById(meal.category)) return meal.category;
+  const n = catNorm(meal && meal.name);
+  const byLabel = MEAL_CATEGORIES.find(c => catNorm(c.label) === n);
+  return byLabel ? byLabel.id : (CATEGORY_ALIASES[n] || OTHER_CATEGORY.id);
+}
+function categoryLabel(id){ return (categoryById(id) || OTHER_CATEGORY).label; }
+function categoryForNow(){
+  const d = new Date(), h = d.getHours() + d.getMinutes() / 60;
+  let cat = MEAL_CATEGORIES[MEAL_CATEGORIES.length - 1].id;   // before 4am = late evening snack
+  MEAL_CATEGORIES.forEach(c => { if (h >= c.from) cat = c.id; });
+  return cat;
+}
+// Default for a new meal: a time-of-day guess for today, none for a past day
+// (a guess about yesterday would just be wrong more often than not).
+function defaultCategory(ds){ return ds === todayStr() ? categoryForNow() : ''; }
+function groupMealsByCategory(meals){
+  const order = MEAL_CATEGORIES.concat([OTHER_CATEGORY]);
+  return order.map(c => ({ id: c.id, label: c.label, meals: meals.filter(m => mealCategory(m) === c.id) }))
+              .filter(g => g.meals.length);
+}
+function mealItemNames(meal){
+  const names = (meal.items || []).map(i => (i.name || '').trim()).filter(n => n && n !== 'Item');
+  return names.length ? names.join(', ') : '';
+}
+
 function mealCard(meal, ds){
   const tm = mealMacros(meal);
+  const cat = mealCategory(meal);
+  // The category heading already says "Breakfast"; don't repeat it as the title.
+  const title = catNorm(meal.name) === catNorm(categoryLabel(cat)) ? '' : (meal.name || '');
+  const items = mealItemNames(meal);
   return '<div class="food-meal-card" data-act="edit-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">'
-    + '<div class="food-meal-row"><span class="food-meal-name">' + esc(meal.name || 'Meal') + '</span>'
+    + '<div class="food-meal-row"><span class="food-meal-name">' + esc(title || items || meal.name || 'Meal') + '</span>'
     + '<span class="food-meal-time">' + esc(meal.time || '') + '</span></div>'
+    + (title && items ? '<div class="food-meal-items">' + esc(items) + '</div>' : '')
     + '<div class="food-meal-stats"><span>' + Math.round(tm.kcal) + ' kcal</span>'
     + '<span>' + Math.round(tm.proteinG) + 'g P</span>'
     + '<span class="food-meal-del" data-act="delete-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">×</span></div></div>';
@@ -1960,13 +2023,18 @@ function renderFoodToday(){
   h += '<div class="food-progress">';
   h += progressBar(totals.kcal, goals.kcal, 'Calories', 'accent');
   h += progressBar(totals.proteinG, goals.proteinG, 'Protein', 'protein');
-  h += '<div class="food-remaining">' + Math.round(remaining) + ' kcal remaining</div></div>';
+  h += '<div class="food-progress-foot"><button class="mini-btn" data-act="edit-goals">Edit goals</button>'
+    + '<span class="food-remaining">' + Math.round(remaining) + ' kcal remaining</span></div></div>';
   if (meals.length === 0){
     h += '<div class="food-empty">' + (isToday ? 'No meals logged yet today. Tap below to log your first meal.'
                                               : 'No meals logged on this day.') + '</div>';
   } else {
     h += '<div class="food-meals-list">';
-    meals.forEach(m => { h += mealCard(m, ds); });
+    groupMealsByCategory(meals).forEach(g => {
+      const t = g.meals.reduce((a, m) => { const mm = mealMacros(m); return { kcal: a.kcal + mm.kcal, p: a.p + mm.proteinG }; }, { kcal: 0, p: 0 });
+      h += '<div class="food-cat-head"><span>' + esc(g.label) + '</span><span>' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.p) + 'g P</span></div>';
+      g.meals.forEach(m => { h += mealCard(m, ds); });
+    });
     h += '</div>';
   }
   h += '<button class="btn btn-primary food-log-btn" data-act="log-meal">+ Log Meal</button></div>';
@@ -1995,11 +2063,23 @@ function renderFoodHistory(){
     + '</div>';
   days.forEach(day => {
     const pct = goal ? Math.min(100, Math.round(day.kcal / goal * 100)) : 0;
+    // What was eaten, under its category: "Breakfast  Strawberries, Blueberries, Coffee".
+    const meals = (food.mealsByDay && food.mealsByDay[day.d]) || [];
+    let cats = '';
+    groupMealsByCategory(meals).forEach(g => {
+      const what = g.meals.map(m => {
+        const items = mealItemNames(m);
+        const named = catNorm(m.name) !== catNorm(g.label) ? (m.name || '') : '';
+        return items || named || 'Meal';
+      }).join('; ');
+      cats += '<div class="food-day-cat"><b>' + esc(g.label) + '</b> ' + esc(what) + '</div>';
+    });
     h += '<div class="food-day-card" data-act="food-open-day" data-ds="' + esc(day.d) + '"><div class="food-day-row">'
       + '<span class="food-day-name">' + fmtLong(day.d) + '</span>'
       + '<span class="food-day-pct">' + pct + '%</span></div>'
       + '<div class="food-day-stats">' + Math.round(day.kcal) + ' kcal · ' + Math.round(day.proteinG) + 'g P · '
-      + day.count + ' meal' + (day.count === 1 ? '' : 's') + '</div></div>';
+      + day.count + ' meal' + (day.count === 1 ? '' : 's') + '</div>'
+      + (cats ? '<div class="food-day-cats">' + cats + '</div>' : '') + '</div>';
   });
   h += '</div>';
   return h;
@@ -2147,9 +2227,11 @@ function deleteMeal(ds, id){
 }
 
 // ---- Saved meals ----
-function addSavedMeal(name, items){
+function addSavedMeal(name, items, category){
   food.savedMeals = food.savedMeals || [];
-  food.savedMeals.push({ id: foodUid('s'), name: name, items: items || [] });
+  const s = { id: foodUid('s'), name: name, items: items || [] };
+  if (categoryById(category)) s.category = category;
+  food.savedMeals.push(s);
   saveState(); render();
   toast('Saved meal added');
 }
@@ -2167,6 +2249,7 @@ function logSavedMeal(id){
   viewState.foodTab = 'today';
   addMealToDay(ds, {
     id: foodUid('m'), name: s.name, time: '', notes: '',
+    category: categoryById(s.category) ? s.category : defaultCategory(ds),
     items: (s.items || []).map(it => Object.assign({}, it, { id: foodUid('i') }))
   });
   toast('Logged ' + s.name + (ds === todayStr() ? '' : ' to ' + fmtShort(ds)));
@@ -2207,7 +2290,7 @@ function logRecipe(id){
   }));
   const ds = foodDay();
   viewState.foodTab = 'today';
-  addMealToDay(ds, { id: foodUid('m'), name: r.name + ' (1 portion)', time: '', notes: '', items: items });
+  addMealToDay(ds, { id: foodUid('m'), name: r.name + ' (1 portion)', category: defaultCategory(ds), time: '', notes: '', items: items });
   toast('Logged ' + r.name + (ds === todayStr() ? '' : ' to ' + fmtShort(ds)));
 }
 
@@ -2215,10 +2298,12 @@ function logRecipe(id){
 function openMealEditor(ds, id){
   const arr = (food.mealsByDay && food.mealsByDay[ds]) || [];
   const existing = id ? arr.find(m => m.id === id) : null;
+  const cat = existing ? mealCategory(existing) : defaultCategory(ds);
   window._mealEditor = existing
     ? { ds: ds, id: existing.id, name: existing.name || '', time: existing.time || '',
+        category: categoryById(cat) ? cat : '',
         notes: existing.notes || '', items: (existing.items || []).map(it => Object.assign({}, it)) }
-    : { ds: ds, id: null, name: '', time: '', notes: '', items: [blankItem()] };
+    : { ds: ds, id: null, name: '', time: '', category: cat, notes: '', items: [blankItem()] };
   renderMealEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -2243,9 +2328,14 @@ function renderEditableRow(it, i, mode){
 function renderMealEditor(){
   const d = window._mealEditor;
   if (!d) return;
-  let h = '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + '</h2>';
-  h += '<div class="form-group"><label class="form-label">Name</label>'
-    + '<input class="form-input" data-input="meal-name" placeholder="e.g. Chicken stir-fry" value="' + esc(d.name) + '"></div>';
+  let h = '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + ' · ' + esc(fmtShort(d.ds)) + '</h2>';
+  h += '<div class="form-group"><label class="form-label">Meal</label><div class="food-cat-chips">';
+  MEAL_CATEGORIES.forEach(c => {
+    h += '<button class="food-cat-chip' + (d.category === c.id ? ' active' : '') + '" data-act="meal-cat" data-cat="' + c.id + '">' + esc(c.label) + '</button>';
+  });
+  h += '</div></div>';
+  h += '<div class="form-group"><label class="form-label">Name (optional)</label>'
+    + '<input class="form-input" data-input="meal-name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'e.g. Chicken stir-fry') + '" value="' + esc(d.name) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
     + '<input class="form-input" data-input="meal-time" placeholder="e.g. 12:30 PM" value="' + esc(d.time) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Items</label><div class="food-editor-items">';
@@ -2273,8 +2363,11 @@ function mealCancel(){ window._mealEditor = null; closeModal(); }
 function mealSaveDraft(){
   const d = window._mealEditor;
   if (!d) return;
-  const name = (d.name || '').trim();
-  if (!name){ toast('Give the meal a name'); return; }
+  const category = categoryById(d.category) ? d.category : '';
+  // A blank name takes the category label, so older builds (which only know
+  // `name`) still show "Breakfast" rather than an unnamed meal.
+  const name = (d.name || '').trim() || (category ? categoryLabel(category) : '');
+  if (!name){ toast('Pick a meal (Breakfast, Lunch…) or give it a name'); return; }
   const bad = foodRowsError(d.items || [], 'Item');
   if (bad){ toast('⚠️ ' + bad); return; }
   const items = (d.items || []).map(it => ({
@@ -2282,11 +2375,48 @@ function mealSaveDraft(){
     kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
     fatG: foodNum(it.fatG), grams: foodNum(it.grams)
   })).filter(it => it.name !== 'Item' || it.kcal || it.proteinG || it.carbsG || it.fatG || it.grams);
-  const meal = { id: d.id || foodUid('m'), name: name, time: (d.time || '').trim(), items: items, notes: (d.notes || '').trim() };
+  const meal = { id: d.id || foodUid('m'), name: name, category: category, time: (d.time || '').trim(), items: items, notes: (d.notes || '').trim() };
   if (d.id) updateMeal(d.ds, d.id, meal); else addMealToDay(d.ds, meal);
   window._mealEditor = null;
   closeModal();
   toast('Meal saved');
+}
+
+// ---- Daily goals ----
+// Stored in food.goals, so they sync with everything else. Bounds are sanity
+// checks against typos (22000 for 2200), not nutrition advice.
+const GOAL_LIMITS = { kcal: [500, 10000], proteinG: [0, 500] };
+function openGoalsEditor(){
+  const g = food.goals || {};
+  window._goalsEditor = { kcal: g.kcal != null ? g.kcal : 2200, proteinG: g.proteinG != null ? g.proteinG : 160 };
+  const d = window._goalsEditor;
+  let h = '<h2>Daily goals</h2>';
+  h += '<div class="form-group"><label class="form-label">Calories (kcal)</label>'
+    + '<input class="form-input" type="number" inputmode="numeric" step="any" data-input="goal-kcal" value="' + esc(d.kcal) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Protein (g)</label>'
+    + '<input class="form-input" type="number" inputmode="numeric" step="any" data-input="goal-proteinG" value="' + esc(d.proteinG) + '"></div>';
+  h += '<button class="btn btn-primary" data-act="goals-save">Save</button>';
+  h += '<button class="btn btn-secondary" data-act="goals-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function goalsSave(){
+  const d = window._goalsEditor;
+  if (!d) return;
+  const next = {};
+  for (const k of Object.keys(GOAL_LIMITS)){
+    const n = Number(d[k]), [lo, hi] = GOAL_LIMITS[k];
+    if (d[k] === '' || !isFinite(n) || n < lo || n > hi){
+      toast('⚠️ ' + (k === 'kcal' ? 'Calories' : 'Protein') + ' goal must be ' + lo + '–' + hi);
+      return;
+    }
+    next[k] = Math.round(n);
+  }
+  food.goals = Object.assign({}, food.goals, next);    // keep any goal fields a newer build added
+  saveState();
+  window._goalsEditor = null;
+  closeModal();
+  toast('Goals saved');
 }
 
 // ---- Recipe editor ----
@@ -2378,7 +2508,7 @@ function savedPick(id){
   let found = null;
   days.forEach(ds => { const m = (food.mealsByDay[ds] || []).find(x => x.id === id); if (m) found = m; });
   if (!found){ closeModal(); return; }
-  addSavedMeal(found.name || 'Meal', (found.items || []).map(it => Object.assign({}, it)));
+  addSavedMeal(found.name || 'Meal', (found.items || []).map(it => Object.assign({}, it)), mealCategory(found));
   closeModal();
 }
 
@@ -2409,6 +2539,16 @@ function handleFoodClick(e){
     case 'edit-recipe': openRecipeEditor(id); break;
     case 'delete-recipe': deleteRecipe(id); break;
     case 'add-recipe': openRecipeEditor(null); break;
+    case 'meal-cat':
+      if (window._mealEditor && categoryById(el.dataset.cat)){
+        // Tapping the selected chip again clears it.
+        window._mealEditor.category = window._mealEditor.category === el.dataset.cat ? '' : el.dataset.cat;
+        renderMealEditor();
+      }
+      break;
+    case 'edit-goals': openGoalsEditor(); break;
+    case 'goals-save': goalsSave(); break;
+    case 'goals-cancel': window._goalsEditor = null; closeModal(); break;
     case 'meal-add-item': mealAddItem(); break;
     case 'meal-remove-item': mealRemoveItem(+el.dataset.index); break;
     case 'meal-save': mealSaveDraft(); break;
@@ -2433,6 +2573,7 @@ function handleFoodInput(e){
     const it = window._mealEditor && window._mealEditor.items && window._mealEditor.items[idx];
     if (it) it[k.slice(5)] = t.value;
   }
+  else if (k === 'goal-kcal' || k === 'goal-proteinG'){ if (window._goalsEditor) window._goalsEditor[k.slice(5)] = t.value; }
   else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
   else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }
   else if (k.indexOf('ing-') === 0){
@@ -2506,7 +2647,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v38',
+    appVersion: 'v39',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
