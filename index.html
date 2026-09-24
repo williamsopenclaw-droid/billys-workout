@@ -303,6 +303,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-recipe-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .food-recipe-name{font-size:14px;font-weight:600}.food-recipe-per{font-size:11px;color:var(--accent);font-weight:700}
 .food-recipe-meta{font-size:11px;color:var(--muted)}
+.food-meal-card{cursor:pointer}
+.food-chip{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.food-chip-main{flex:1;min-width:0}
+.food-chip-del{color:var(--muted);font-size:18px;line-height:1;padding:4px;flex-shrink:0}
+.food-chip-del:active{color:var(--red)}
+.food-recipe-actions{display:flex;gap:6px;margin-top:8px}
+.food-recipe-actions .mini-btn{flex:1}
+.food-editor-items{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.food-item-row{display:flex;gap:6px;align-items:flex-start}
+.food-item-grid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.food-item-grid .food-item-name{grid-column:1 / -1}
+.food-item-del{border:none;background:var(--card);color:var(--muted);font-size:16px;width:30px;height:30px;border-radius:8px;cursor:pointer;flex-shrink:0}
+.food-item-del:active{color:var(--red)}
 </style>
 </head>
 <body>
@@ -1868,13 +1881,12 @@ function progressBar(consumed, target, label, color){
 }
 function mealCard(meal, ds){
   const tm = mealMacros(meal);
-  return '<div class="food-meal-card">'
+  return '<div class="food-meal-card" data-act="edit-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">'
     + '<div class="food-meal-row"><span class="food-meal-name">' + esc(meal.name || 'Meal') + '</span>'
     + '<span class="food-meal-time">' + (meal.time || '') + '</span></div>'
     + '<div class="food-meal-stats"><span>' + Math.round(tm.kcal) + ' kcal</span>'
     + '<span>' + Math.round(tm.proteinG) + 'g P</span>'
-    + '<span class="food-meal-del" onclick="deleteMeal(\'' + ds + '\',' + (meal.id ? '\'' + meal.id + '\'' : 'null') + ')">×</span></div></div>';
-
+    + '<span class="food-meal-del" data-act="delete-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">×</span></div></div>';
 }
 
 function renderFoodToday(){
@@ -1894,7 +1906,7 @@ function renderFoodToday(){
     meals.forEach(m => { h += mealCard(m, ds); });
     h += '</div>';
   }
-  h += '<button class="btn btn-primary food-log-btn" onclick="openLogMealModal()">+ Log Meal</button></div>';
+  h += '<button class="btn btn-primary food-log-btn" data-act="log-meal">+ Log Meal</button></div>';
   return h;
 }
 
@@ -1932,13 +1944,14 @@ function renderFoodSaved(){
     h += '<div class="food-chip-list">';
     food.savedMeals.forEach(s => {
       const t = mealMacros(s);
-      h += '<div class="food-chip" onclick="logSavedMeal(\'' + s.id + '\')">'
-        + '<div class="food-chip-name">' + esc(s.name) + '</div>'
-        + '<div class="food-chip-stats">' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div>';
+      h += '<div class="food-chip" data-act="log-saved-meal" data-id="' + esc(s.id) + '">'
+        + '<div class="food-chip-main"><div class="food-chip-name">' + esc(s.name) + '</div>'
+        + '<div class="food-chip-stats">' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div>'
+        + '<span class="food-chip-del" data-act="delete-saved-meal" data-id="' + esc(s.id) + '">×</span></div>';
     });
     h += '</div>';
   }
-  h += '<button class="btn btn-primary" onclick="showAddSavedMeal()" style="margin-top:14px">+ Saved Meal from Recent</button></div>';
+  h += '<button class="btn btn-primary" data-act="add-saved-meal" style="margin-top:14px">+ Saved Meal from Recent</button></div>';
   return h;
 }
 
@@ -1950,24 +1963,29 @@ function renderFoodRecipes(){
     h += '<div class="food-recipes-list">';
     food.recipes.forEach(r => {
       const per = r.portions > 0 ? Math.round(recipeKcal(r) / r.portions) : 0;
-      h += '<div class="food-recipe-card"><div class="food-recipe-row">'
-        + '<span class="food-recipe-name">' + esc(r.name) + '</span>'
+      h += '<div class="food-recipe-card">'
+        + '<div class="food-recipe-row"><span class="food-recipe-name">' + esc(r.name) + '</span>'
         + '<span class="food-recipe-per">' + per + ' kcal / portion</span></div>'
-        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + r.portions + ' portions</div></div>';
+        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + r.portions + ' portions</div>'
+        + '<div class="food-recipe-actions">'
+        + '<button class="mini-btn" data-act="log-recipe" data-id="' + esc(r.id) + '">Log 1 portion</button>'
+        + '<button class="mini-btn" data-act="edit-recipe" data-id="' + esc(r.id) + '">Edit</button>'
+        + '<button class="mini-btn" data-act="delete-recipe" data-id="' + esc(r.id) + '">Delete</button>'
+        + '</div></div>';
     });
     h += '</div>';
   }
-  h += '<button class="btn btn-primary" onclick="showAddRecipe()" style="margin-top:14px">+ Add Recipe</button></div>';
+  h += '<button class="btn btn-primary" data-act="add-recipe" style="margin-top:14px">+ Add Recipe</button></div>';
   return h;
 }
 
 function renderFoodNav(){
   const tab = viewState.foodTab || 'today';
   return '<div class="section-toggle" style="margin-bottom:12px"><div class="section-toggle-inner" id="food-tab-nav">'
-    + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" onclick="setFoodTab(\'today\')">📊 Today</button>'
-    + '<button class="section-seg' + (tab === 'history' ? ' active' : '') + '" data-tab="history" onclick="setFoodTab(\'history\')">📅 History</button>'
-    + '<button class="section-seg' + (tab === 'saved' ? ' active' : '') + '" data-tab="saved" onclick="setFoodTab(\'saved\')">⭐ Saved</button>'
-    + '<button class="section-seg' + (tab === 'recipes' ? ' active' : '') + '" data-tab="recipes" onclick="setFoodTab(\'recipes\')">🧾 Recipes</button>'
+    + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" data-act="food-tab">📊 Today</button>'
+    + '<button class="section-seg' + (tab === 'history' ? ' active' : '') + '" data-tab="history" data-act="food-tab">📅 History</button>'
+    + '<button class="section-seg' + (tab === 'saved' ? ' active' : '') + '" data-tab="saved" data-act="food-tab">⭐ Saved</button>'
+    + '<button class="section-seg' + (tab === 'recipes' ? ' active' : '') + '" data-tab="recipes" data-act="food-tab">🧾 Recipes</button>'
     + '</div></div>';
 }
 
@@ -2000,6 +2018,320 @@ function scrollToToday(){
   const el = document.getElementById('day-' + todayStr());
   if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
 }
+
+// ==========================================
+// FOOD UI (v36) — MUTATION LAYER
+// ==========================================
+// Stable, collision-safe ids. Never interpolate user/AI text into HTML
+// attributes or inline handlers; all Food interaction is event-delegated
+// via data-act / data-input attributes (see handleFoodClick/Input below).
+function foodUid(p){ return (p || 'm') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+function foodNum(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
+function foodRound1(n){ return Math.round(n * 10) / 10; }
+function blankItem(){ return { id: foodUid('i'), name: '', kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, grams: 0 }; }
+function blankIngredient(){ return blankItem(); }
+
+// ---- Meal add/edit/delete ----
+function addMealToDay(ds, meal){
+  food.mealsByDay = food.mealsByDay || {};
+  (food.mealsByDay[ds] = food.mealsByDay[ds] || []).push(meal);
+  saveState(); render();
+}
+function updateMeal(ds, id, patch){
+  const arr = food.mealsByDay && food.mealsByDay[ds];
+  if (!arr) return;
+  const i = arr.findIndex(m => m.id === id);
+  if (i < 0) return;
+  arr[i] = Object.assign({}, arr[i], patch);
+  saveState(); render();
+}
+function deleteMeal(ds, id){
+  const arr = food.mealsByDay && food.mealsByDay[ds];
+  if (!arr) return;
+  food.mealsByDay[ds] = arr.filter(m => m.id !== id);
+  saveState(); render();
+  toast('Meal deleted');
+}
+
+// ---- Saved meals ----
+function addSavedMeal(name, items){
+  food.savedMeals = food.savedMeals || [];
+  food.savedMeals.push({ id: foodUid('s'), name: name, items: items || [] });
+  saveState(); render();
+  toast('Saved meal added');
+}
+function deleteSavedMeal(id){
+  food.savedMeals = (food.savedMeals || []).filter(s => s.id !== id);
+  saveState(); render();
+  toast('Saved meal removed');
+}
+function logSavedMeal(id){
+  const s = (food.savedMeals || []).find(x => x.id === id);
+  if (!s) return;
+  viewState.foodTab = 'today';
+  addMealToDay(todayStr(), {
+    id: foodUid('m'), name: s.name, time: '', notes: '',
+    items: (s.items || []).map(it => Object.assign({}, it, { id: it.id || foodUid('i') }))
+  });
+  toast('Logged ' + s.name);
+}
+
+// ---- Recipes ----
+function addRecipe(name, portions, ingredients){
+  food.recipes = food.recipes || [];
+  food.recipes.push({ id: foodUid('r'), name: name, portions: portions, ingredients: ingredients || [] });
+  saveState(); render();
+  toast('Recipe saved');
+}
+function updateRecipe(id, patch){
+  const arr = food.recipes || [];
+  const i = arr.findIndex(r => r.id === id);
+  if (i < 0) return;
+  arr[i] = Object.assign({}, arr[i], patch);
+  saveState(); render();
+}
+function deleteRecipe(id){
+  food.recipes = (food.recipes || []).filter(r => r.id !== id);
+  saveState(); render();
+  toast('Recipe deleted');
+}
+function logRecipe(id){
+  const r = (food.recipes || []).find(x => x.id === id);
+  if (!r) return;
+  const portions = foodNum(r.portions) > 0 ? foodNum(r.portions) : 1;
+  const items = (r.ingredients || []).map(ing => ({
+    id: foodUid('i'), name: ing.name || 'Ingredient',
+    kcal:     foodRound1(foodNum(ing.kcal)     / portions),
+    proteinG: foodRound1(foodNum(ing.proteinG) / portions),
+    carbsG:   foodRound1(foodNum(ing.carbsG)   / portions),
+    fatG:     foodRound1(foodNum(ing.fatG)     / portions),
+    grams:    foodRound1(foodNum(ing.grams)    / portions)
+  }));
+  viewState.foodTab = 'today';
+  addMealToDay(todayStr(), { id: foodUid('m'), name: r.name + ' (1 portion)', time: '', notes: '', items: items });
+  toast('Logged ' + r.name);
+}
+
+// ---- Meal editor ----
+function openMealEditor(ds, id){
+  const arr = (food.mealsByDay && food.mealsByDay[ds]) || [];
+  const existing = id ? arr.find(m => m.id === id) : null;
+  window._mealEditor = existing
+    ? { ds: ds, id: existing.id, name: existing.name || '', time: existing.time || '',
+        notes: existing.notes || '', items: (existing.items || []).map(it => Object.assign({}, it)) }
+    : { ds: ds, id: null, name: '', time: '', notes: '', items: [blankItem()] };
+  renderMealEditor();
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function numIn(key, val, i){
+  const tail = key.split('-').pop();
+  const ph = { kcal: 'kcal', proteinG: 'P g', carbsG: 'C g', fatG: 'F g', grams: 'g' }[tail] || '';
+  const v = (val === 0 || val === '' || val == null) ? '' : val;
+  return '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="' + key + '" data-index="' + i + '" placeholder="' + ph + '" value="' + esc(v) + '">';
+}
+function renderEditableRow(it, i, mode){
+  const act = mode === 'meal' ? 'meal-remove-item' : 'recipe-remove-ingredient';
+  const pfx = mode === 'meal' ? 'item-' : 'ing-';
+  return '<div class="food-item-row"><div class="food-item-grid">'
+    + '<input class="form-input food-item-name" data-input="' + pfx + 'name" data-index="' + i + '" placeholder="Item name" value="' + esc(it.name || '') + '">'
+    + numIn(pfx + 'kcal', it.kcal, i)
+    + numIn(pfx + 'proteinG', it.proteinG, i)
+    + numIn(pfx + 'carbsG', it.carbsG, i)
+    + numIn(pfx + 'fatG', it.fatG, i)
+    + numIn(pfx + 'grams', it.grams, i)
+    + '</div><button class="food-item-del" data-act="' + act + '" data-index="' + i + '">×</button></div>';
+}
+function renderMealEditor(){
+  const d = window._mealEditor;
+  if (!d) return;
+  let h = '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + '</h2>';
+  h += '<div class="form-group"><label class="form-label">Name</label>'
+    + '<input class="form-input" data-input="meal-name" placeholder="e.g. Chicken stir-fry" value="' + esc(d.name) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
+    + '<input class="form-input" data-input="meal-time" placeholder="e.g. 12:30 PM" value="' + esc(d.time) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Items</label><div class="food-editor-items">';
+  (d.items || []).forEach((it, i) => { h += renderEditableRow(it, i, 'meal'); });
+  h += '</div><button class="btn btn-secondary" data-act="meal-add-item">+ Add item</button></div>';
+  h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
+    + '<input class="form-input" data-input="meal-notes" placeholder="Supplements, water, etc." value="' + esc(d.notes) + '"></div>';
+  h += '<button class="btn btn-primary" data-act="meal-save">Save</button>';
+  h += '<button class="btn btn-secondary" data-act="meal-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+}
+function mealAddItem(){
+  if (!window._mealEditor) return;
+  window._mealEditor.items = (window._mealEditor.items || []).concat([blankItem()]);
+  renderMealEditor();
+}
+function mealRemoveItem(i){
+  const d = window._mealEditor;
+  if (!d) return;
+  d.items = (d.items || []).filter((_, j) => j !== i);
+  if (!d.items.length) d.items = [blankItem()];
+  renderMealEditor();
+}
+function mealCancel(){ window._mealEditor = null; closeModal(); }
+function mealSaveDraft(){
+  const d = window._mealEditor;
+  if (!d) return;
+  const name = (d.name || '').trim();
+  if (!name){ toast('Give the meal a name'); return; }
+  const items = (d.items || []).map(it => ({
+    id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Item',
+    kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
+    fatG: foodNum(it.fatG), grams: foodNum(it.grams)
+  })).filter(it => it.name !== 'Item' || it.kcal || it.proteinG || it.carbsG || it.fatG || it.grams);
+  const meal = { id: d.id || foodUid('m'), name: name, time: (d.time || '').trim(), items: items, notes: (d.notes || '').trim() };
+  if (d.id) updateMeal(d.ds, d.id, meal); else addMealToDay(d.ds, meal);
+  window._mealEditor = null;
+  closeModal();
+  toast('Meal saved');
+}
+
+// ---- Recipe editor ----
+function openRecipeEditor(id){
+  const r = id ? (food.recipes || []).find(x => x.id === id) : null;
+  window._recipeEditor = r
+    ? { id: r.id, name: r.name || '', portions: r.portions, ingredients: (r.ingredients || []).map(i => Object.assign({}, i)) }
+    : { id: null, name: '', portions: 4, ingredients: [blankIngredient()] };
+  renderRecipeEditor();
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function renderRecipeEditor(){
+  const d = window._recipeEditor;
+  if (!d) return;
+  let h = '<h2>' + (d.id ? 'Edit recipe' : 'Add recipe') + '</h2>';
+  h += '<div class="form-group"><label class="form-label">Name</label>'
+    + '<input class="form-input" data-input="recipe-name" placeholder="e.g. Chicken stir-fry" value="' + esc(d.name) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Portions</label>'
+    + '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="recipe-portions" value="' + esc(d.portions) + '"></div>';
+  h += '<div class="form-group"><label class="form-label">Ingredients (full batch)</label><div class="food-editor-items">';
+  (d.ingredients || []).forEach((it, i) => { h += renderEditableRow(it, i, 'recipe'); });
+  h += '</div><button class="btn btn-secondary" data-act="recipe-add-ingredient">+ Add ingredient</button></div>';
+  h += '<button class="btn btn-primary" data-act="recipe-save">Save</button>';
+  h += '<button class="btn btn-secondary" data-act="recipe-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+}
+function recipeAddIngredient(){
+  if (!window._recipeEditor) return;
+  window._recipeEditor.ingredients = (window._recipeEditor.ingredients || []).concat([blankIngredient()]);
+  renderRecipeEditor();
+}
+function recipeRemoveIngredient(i){
+  const d = window._recipeEditor;
+  if (!d) return;
+  d.ingredients = (d.ingredients || []).filter((_, j) => j !== i);
+  if (!d.ingredients.length) d.ingredients = [blankIngredient()];
+  renderRecipeEditor();
+}
+function recipeCancel(){ window._recipeEditor = null; closeModal(); }
+function recipeSaveDraft(){
+  const d = window._recipeEditor;
+  if (!d) return;
+  const name = (d.name || '').trim();
+  if (!name){ toast('Give the recipe a name'); return; }
+  const portions = foodNum(d.portions) > 0 ? foodNum(d.portions) : 1;
+  const ingredients = (d.ingredients || []).map(it => ({
+    id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Ingredient',
+    kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
+    fatG: foodNum(it.fatG), grams: foodNum(it.grams)
+  }));
+  if (d.id) updateRecipe(d.id, { name: name, portions: portions, ingredients: ingredients });
+  else addRecipe(name, portions, ingredients);
+  window._recipeEditor = null;
+  closeModal();
+}
+
+// ---- Saved meal from recent ----
+function openAddSavedMealModal(){
+  const recents = [];
+  const days = [];
+  for (let i = 0; i < 14; i++) days.push(addDays(todayStr(), -i));
+  days.forEach(ds => {
+    (food.mealsByDay && food.mealsByDay[ds] || []).forEach(m => {
+      if (m && m.id) recents.push(m);
+    });
+  });
+  let h = '<h2>Save a meal from recent</h2>';
+  if (!recents.length){
+    h += '<div class="food-empty">No meals logged in the last 14 days.</div>';
+  } else {
+    h += '<div class="food-chip-list">';
+    recents.forEach(m => {
+      const t = mealMacros(m);
+      h += '<div class="food-chip" data-act="saved-pick" data-id="' + esc(m.id) + '">'
+        + '<div class="food-chip-main"><div class="food-chip-name">' + esc(m.name || 'Meal') + '</div>'
+        + '<div class="food-chip-stats">' + Math.round(t.kcal) + ' kcal · ' + Math.round(t.proteinG) + 'g P</div></div></div>';
+    });
+    h += '</div>';
+  }
+  h += '<button class="btn btn-secondary" data-act="saved-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function savedPick(id){
+  const days = Object.keys(food.mealsByDay || {});
+  let found = null;
+  days.forEach(ds => { const m = (food.mealsByDay[ds] || []).find(x => x.id === id); if (m) found = m; });
+  if (!found){ closeModal(); return; }
+  addSavedMeal(found.name || 'Meal', (found.items || []).map(it => Object.assign({}, it)));
+  closeModal();
+}
+
+// ---- Delegated event handling (no inline onclick with interpolated data) ----
+function handleFoodClick(e){
+  const t = e.target;
+  if (!t || !t.closest) return;
+  const el = t.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  const ds = el.dataset.ds;
+  switch (act) {
+    case 'food-tab': setFoodTab(el.dataset.tab); break;
+    case 'log-meal': openMealEditor(todayStr(), null); break;
+    case 'edit-meal': openMealEditor(ds, id); break;
+    case 'delete-meal': deleteMeal(ds, id); break;
+    case 'log-saved-meal': logSavedMeal(id); break;
+    case 'delete-saved-meal': deleteSavedMeal(id); break;
+    case 'add-saved-meal': openAddSavedMealModal(); break;
+    case 'log-recipe': logRecipe(id); break;
+    case 'edit-recipe': openRecipeEditor(id); break;
+    case 'delete-recipe': deleteRecipe(id); break;
+    case 'add-recipe': openRecipeEditor(null); break;
+    case 'meal-add-item': mealAddItem(); break;
+    case 'meal-remove-item': mealRemoveItem(+el.dataset.index); break;
+    case 'meal-save': mealSaveDraft(); break;
+    case 'meal-cancel': mealCancel(); break;
+    case 'recipe-add-ingredient': recipeAddIngredient(); break;
+    case 'recipe-remove-ingredient': recipeRemoveIngredient(+el.dataset.index); break;
+    case 'recipe-save': recipeSaveDraft(); break;
+    case 'recipe-cancel': recipeCancel(); break;
+    case 'saved-pick': savedPick(id); break;
+    case 'saved-cancel': closeModal(); break;
+  }
+}
+function handleFoodInput(e){
+  const t = e.target;
+  const k = t && t.dataset && t.dataset.input;
+  if (!k) return;
+  const idx = t.dataset.index != null ? +t.dataset.index : -1;
+  if (k === 'meal-name'){ if (window._mealEditor) window._mealEditor.name = t.value; }
+  else if (k === 'meal-time'){ if (window._mealEditor) window._mealEditor.time = t.value; }
+  else if (k === 'meal-notes'){ if (window._mealEditor) window._mealEditor.notes = t.value; }
+  else if (k.indexOf('item-') === 0){
+    const it = window._mealEditor && window._mealEditor.items && window._mealEditor.items[idx];
+    if (it) it[k.slice(5)] = t.value;
+  }
+  else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
+  else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }
+  else if (k.indexOf('ing-') === 0){
+    const it = window._recipeEditor && window._recipeEditor.ingredients && window._recipeEditor.ingredients[idx];
+    if (it) it[k.slice(4)] = t.value;
+  }
+}
+document.addEventListener('click', handleFoodClick);
+document.addEventListener('input', handleFoodInput);
 
 // ==========================================
 // CSV EXPORT
