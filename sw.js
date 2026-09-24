@@ -1,4 +1,4 @@
-const VERSION = 'v39';
+const VERSION = 'v40';
 const CACHE = `billys-workout-${VERSION}`;
 const ASSETS = [
   'index.html',
@@ -24,6 +24,9 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Only GETs are cacheable. Let POSTs (photo analysis, sync writes) go
+  // straight to the network untouched.
+  if (e.request.method !== 'GET') return;
   // Network-first for index.html so updates are always picked up
   if(e.request.url.endsWith('index.html') || e.request.mode === 'navigate'){
     e.respondWith(

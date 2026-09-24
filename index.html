@@ -336,6 +336,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-progress-foot .food-remaining{margin-top:0}
 .food-day-cats{margin-top:6px;font-size:12px;color:var(--text);line-height:1.4}
 .food-day-cat b{color:var(--accent);font-weight:600;margin-right:2px}
+/* v40: AI photo estimate */
+.food-ai-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
+.food-ai-box .btn{margin:0}
+.food-ai-status{font-size:13px;color:var(--text);text-align:center;padding:8px 0}
+.food-ai-banner{font-size:12px;color:var(--accent);line-height:1.4}
+.food-ai-notes{margin:0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.4}
+.food-ai-error{font-size:12px;color:var(--red);line-height:1.4}
+.food-ai-tag{grid-column:1/-1;font-size:11px;color:var(--accent);line-height:1.3}
 </style>
 </head>
 <body>
@@ -1326,7 +1334,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v39 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v40 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2323,6 +2331,8 @@ function renderEditableRow(it, i, mode){
     + numIn(pfx + 'carbsG', it.carbsG, i)
     + numIn(pfx + 'fatG', it.fatG, i)
     + numIn(pfx + 'grams', it.grams, i)
+    + (it.source === 'ai' ? '<div class="food-ai-tag">AI estimate · ' + esc(it.confidence || 'low') + ' confidence'
+                             + (it.notes ? ' · ' + esc(it.notes) : '') + '</div>' : '')
     + '</div><button class="food-item-del" data-act="' + act + '" data-index="' + i + '">×</button></div>';
 }
 function renderMealEditor(){
@@ -2334,6 +2344,7 @@ function renderMealEditor(){
     h += '<button class="food-cat-chip' + (d.category === c.id ? ' active' : '') + '" data-act="meal-cat" data-cat="' + c.id + '">' + esc(c.label) + '</button>';
   });
   h += '</div></div>';
+  h += renderAiBox(d);
   h += '<div class="form-group"><label class="form-label">Name (optional)</label>'
     + '<input class="form-input" data-input="meal-name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'e.g. Chicken stir-fry') + '" value="' + esc(d.name) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
@@ -2370,17 +2381,153 @@ function mealSaveDraft(){
   if (!name){ toast('Pick a meal (Breakfast, Lunch…) or give it a name'); return; }
   const bad = foodRowsError(d.items || [], 'Item');
   if (bad){ toast('⚠️ ' + bad); return; }
-  const items = (d.items || []).map(it => ({
+  // Normalise the known fields but keep any others on the item (AI markers,
+  // or fields a newer build added) — rebuilding from a fixed list dropped them.
+  const items = (d.items || []).map(it => Object.assign({}, it, {
     id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Item',
     kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
     fatG: foodNum(it.fatG), grams: foodNum(it.grams)
   })).filter(it => it.name !== 'Item' || it.kcal || it.proteinG || it.carbsG || it.fatG || it.grams);
   const meal = { id: d.id || foodUid('m'), name: name, category: category, time: (d.time || '').trim(), items: items, notes: (d.notes || '').trim() };
+  if (d.aiUsed) meal.aiAssisted = true;
   if (d.id) updateMeal(d.ds, d.id, meal); else addMealToDay(d.ds, meal);
   window._mealEditor = null;
   closeModal();
   toast('Meal saved');
 }
+
+// ---- AI photo estimate (v40, Gate 3) ----
+// Photo -> /api/analyze-food -> items loaded into the OPEN meal editor as
+// editable rows. Nothing is saved until the user taps Save; an AI guess is
+// never written on its own. The photo lives only in local variables and is
+// never stored or synced. The server authenticates with this device's sync
+// code (see analyze-food.js), so photo analysis needs Sync set up.
+const AI_PHOTO_MAX_EDGE = 1280;                // px, long edge after resizing
+const AI_PHOTO_MAX_BYTES = 3 * 1024 * 1024;    // after compression; server cap is 4 MB
+const AI_TIMEOUT_MS = 60000;
+
+function renderAiBox(d){
+  const ai = d.ai || {};
+  let h = '<div class="food-ai-box">';
+  if (ai.status === 'busy'){
+    h += '<div class="food-ai-status">⏳ Analysing photo…</div>';
+  } else {
+    h += '<button class="btn btn-secondary food-ai-btn" data-act="meal-photo">📷 ' + (ai.status === 'done' ? 'Estimate another photo' : 'Estimate from photo') + '</button>'
+      + '<input type="file" accept="image/*" data-input="meal-photo-file" class="food-ai-file" hidden>'
+      + '<input class="form-input" data-input="meal-ai-desc" placeholder="Optional: what it is, brands, weights" value="' + esc(ai.desc || '') + '">';
+  }
+  if (ai.status === 'done'){
+    h += '<div class="food-ai-banner">AI estimate added below (' + ai.count + ' item' + (ai.count === 1 ? '' : 's') + '). '
+      + 'Check every name and number — nothing is saved until you tap Save.</div>';
+    const notes = (ai.warnings || []).map(w => '⚠️ ' + w).concat((ai.assumptions || []).map(a => 'Assumed: ' + a));
+    if (notes.length) h += '<ul class="food-ai-notes">' + notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul>';
+  }
+  if (ai.status === 'error') h += '<div class="food-ai-error">' + esc(ai.message || 'Photo analysis failed.') + '</div>';
+  return h + '</div>';
+}
+
+function startMealPhoto(){
+  if (!window._mealEditor) return;
+  if (!syncKey()){ toast('Set up ☁️ Sync first — photo analysis uses your sync code to prove it\'s you'); return; }
+  if (navigator.onLine === false){ toast('📴 Photo analysis needs internet'); return; }
+  const input = document.querySelector('#modal .food-ai-file');
+  if (input) input.click();
+}
+
+// Resize and re-encode on the phone: a 12 MP photo becomes ~0.2–0.5 MB JPEG,
+// which uploads fast and is plenty for the model. Also strips location metadata.
+async function compressPhoto(file){
+  if (!file || !/^image\//.test(file.type || '')) throw new Error('That file isn\'t a photo.');
+  if (file.size > 30 * 1024 * 1024) throw new Error('That photo is too large.');
+  let src, w, h, cleanup = () => {};
+  try {
+    src = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    w = src.width; h = src.height; cleanup = () => src.close && src.close();
+  } catch (e) {
+    const url = URL.createObjectURL(file);
+    src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; })
+      .catch(() => { throw new Error('Couldn\'t read that photo. Try a JPEG or PNG.'); })
+      .finally(() => URL.revokeObjectURL(url));
+    w = src.naturalWidth; h = src.naturalHeight;
+  }
+  const scale = Math.min(1, AI_PHOTO_MAX_EDGE / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+  canvas.getContext('2d').drawImage(src, 0, 0, canvas.width, canvas.height);
+  cleanup();
+  for (const q of [0.82, 0.65, 0.5]){
+    const url = canvas.toDataURL('image/jpeg', q);
+    if (url.length * 3 / 4 <= AI_PHOTO_MAX_BYTES) return url;
+  }
+  throw new Error('That photo is too large.');
+}
+
+async function requestFoodAnalysis(photoDataUrl, description){
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS) : null;
+  let r, body = null;
+  try {
+    r = await fetch('/api/analyze-food', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Sync-Key': syncKey() },
+      body: JSON.stringify({ photoBase64: photoDataUrl, description: (description || '').slice(0, 500) }),
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? 'Photo analysis took too long. Try again.' : 'Couldn\'t reach the server. Check your connection.');
+  } finally { if (timer) clearTimeout(timer); }
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((body && typeof body.message === 'string' && body.message.slice(0, 200)) || 'Photo analysis failed (' + r.status + ').');
+  if (!body || !Array.isArray(body.items) || !body.items.length) throw new Error('No food was recognised in that photo.');
+  return body;
+}
+
+// Load a result into the editor as ordinary editable rows. Re-validated here
+// too: the client never trusts the response shape any more than the server
+// trusts the model's.
+function applyAiResult(d, result){
+  const clampNum = (v, max) => { const n = Number(v); return (isFinite(n) && n >= 0) ? Math.round(Math.min(n, max) * 10) / 10 : 0; };
+  const str = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '');
+  const rows = (result.items || []).slice(0, 25).map(i => ({
+    id: foodUid('i'), name: str(i && i.name, 80) || 'Item',
+    kcal: clampNum(i && i.kcal, 5000), proteinG: clampNum(i && i.proteinG, 500), carbsG: clampNum(i && i.carbsG, 1000),
+    fatG: clampNum(i && i.fatG, 500), grams: clampNum(i && i.grams, 5000),
+    source: 'ai', confidence: ['low','medium','high'].includes(i && i.confidence) ? i.confidence : 'low',
+    notes: str(i && i.notes, 200)
+  }));
+  // Replace the untouched starter row; otherwise add to what's already there.
+  const blank = it => !(it.name || '').trim() && !['kcal','proteinG','carbsG','fatG','grams'].some(k => it[k] !== '' && it[k] != null && Number(it[k]) !== 0);
+  const kept = (d.items || []).filter(it => !blank(it));
+  d.items = kept.concat(rows);
+  d.aiUsed = true;
+  const list = v => (Array.isArray(v) ? v : []).map(s => str(s, 200)).filter(Boolean).slice(0, 8);
+  d.ai = { status: 'done', desc: (d.ai && d.ai.desc) || '', count: rows.length,
+           warnings: list(result.warnings), assumptions: list(result.assumptions) };
+}
+
+async function onMealPhotoChosen(input){
+  const d = window._mealEditor;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!d || !file) return;
+  const desc = (d.ai && d.ai.desc) || '';
+  d.ai = { status: 'busy', desc };
+  renderMealEditor();
+  try {
+    const photo = await compressPhoto(file);
+    const result = await requestFoodAnalysis(photo, desc);
+    if (window._mealEditor !== d) return;          // editor closed or replaced meanwhile: drop it
+    applyAiResult(d, result);
+  } catch (e) {
+    if (window._mealEditor !== d) return;
+    d.ai = { status: 'error', desc, message: (e && e.message) || 'Photo analysis failed.' };
+  }
+  renderMealEditor();
+}
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t && t.dataset && t.dataset.input === 'meal-photo-file') onMealPhotoChosen(t);
+});
 
 // ---- Daily goals ----
 // Stored in food.goals, so they sync with everything else. Bounds are sanity
@@ -2546,6 +2693,7 @@ function handleFoodClick(e){
         renderMealEditor();
       }
       break;
+    case 'meal-photo': startMealPhoto(); break;
     case 'edit-goals': openGoalsEditor(); break;
     case 'goals-save': goalsSave(); break;
     case 'goals-cancel': window._goalsEditor = null; closeModal(); break;
@@ -2569,6 +2717,7 @@ function handleFoodInput(e){
   if (k === 'meal-name'){ if (window._mealEditor) window._mealEditor.name = t.value; }
   else if (k === 'meal-time'){ if (window._mealEditor) window._mealEditor.time = t.value; }
   else if (k === 'meal-notes'){ if (window._mealEditor) window._mealEditor.notes = t.value; }
+  else if (k === 'meal-ai-desc'){ const d = window._mealEditor; if (d){ d.ai = d.ai || {}; d.ai.desc = t.value; } }
   else if (k.indexOf('item-') === 0){
     const it = window._mealEditor && window._mealEditor.items && window._mealEditor.items[idx];
     if (it) it[k.slice(5)] = t.value;
@@ -2647,7 +2796,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v39',
+    appVersion: 'v40',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));

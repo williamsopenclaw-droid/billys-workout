@@ -14,6 +14,22 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v40, Gate 3: AI photo estimates
+
+**Flow.** Meal editor → 📷 Estimate from photo (+ optional description) → the phone resizes to ≤1280 px JPEG (`compressPhoto()`, typically 0.2–0.5 MB, strips metadata) → `POST /api/analyze-food` → the result is loaded into the **open editor as ordinary editable rows** (`applyAiResult()`), replacing only an untouched starter row, with a banner plus the model's assumptions and warnings. **Nothing is saved until the user taps Save — never write an AI result directly.** Saved items keep `source: 'ai'` + `confidence`; the meal gets `aiAssisted: true` (additive). The photo is never stored or synced. A result that arrives after the editor was closed is dropped.
+
+**Auth is the sync code — no separate token.** The app sends `X-Sync-Key`; the function checks it with the same RLS-gated Supabase read that sync uses, and **fails closed** if Supabase can't be reached (paused project → photo analysis unavailable, manual logging unaffected). So photo analysis needs Sync set up on the device. No new secret exists anywhere in the public page. The key is never sent to the AI gateway and never logged.
+
+**Server config (Netlify env vars):** `OPENAI_API_KEY` + `OPENAI_BASE_URL` — provided by Netlify AI Gateway when it's enabled for the team; if missing the function answers 503 `not_configured`. Optional `FOOD_AI_MODEL` (default `gpt-4o-mini`) and `FOOD_AI_DISABLED=1` as a kill switch. `ANALYZE_FOOD_TOKEN` is no longer used. **Never put a model key in `index.html`.**
+
+**Hardening.** Only base64 JPEG/PNG/WebP, ≤4 MB. The model's output is never passed through: every number clamped (≥0, per-item caps), strings cut, ≤25 items, totals recomputed; the client re-validates the same way. Errors are a stable `error` code plus a plain `message`; upstream bodies are never returned or logged (status only). `sw.js` now ignores non-GET requests.
+
+**Also fixed:** `mealSaveDraft()` rebuilt items from a fixed field list, dropping any other field (the AI markers, or a newer build's fields). It now keeps them. And the test suite now **fails if it never reaches the end** — a hung async test used to exit 0, which looks like a pass.
+
+Tests: 208 assertions. 26 Gate 3 mutations: 25 caught; the 26th (removing the stale-result guard) is behaviourally equivalent because the late result is written to the closed draft object, never the open one. The real end-to-end call needs Billy's phone with Sync set up — it can't be exercised from here without a real sync code.
+
+---
+
 ## September 23, 2026 update — v39, Gate 2: meal categories and editable goals
 
 - **Categories are stable ids on the meal** (`meal.category`: `breakfast`, `am-snack`, `lunch`, `pm-snack`, `post-workout`, `dinner`, `evening-snack`), defined once in `MEAL_CATEGORIES`. Store the id, never the label, so labels can be reworded freely. Unknown or junk ids read as Other.
@@ -44,7 +60,7 @@ Tests: 115 assertions. Each Gate 1a behaviour was mutation-checked — thirteen 
 
 **v36 (Sept 21–23, built outside Claude, commits `90a60e5`, `651e301`, `a921380`)** added a Food section beside Workout: meals per day, daily kcal/protein goals, saved one-tap meals, and meal-prep recipes logged one portion at a time. State is a **top-level `food` object** in the same `caprica_workout_v2` blob (not inside `store`), so it rides along with save, backup, restore and sync. Totals are always recomputed from items (`mealMacros()`); a stored `totals` is ignored. All food UI is event-delegated via `data-act`/`data-input` — no user text in inline `onclick`. `90a60e5` shipped a parse error (blank app) that `651e301` fixed a day later — the syntax check (`node tests/check_syntax.cjs`) exists to prevent a repeat.
 
-**The app is no longer network-free.** `netlify/functions/analyze-food.js` serves `POST /api/analyze-food`: meal photo in, itemised macro estimate out, via an OpenAI-compatible gateway (`OPENAI_API_KEY` + `OPENAI_BASE_URL` env vars on Netlify, model `gpt-4o-mini`). **The UI does not call it yet.** It is **off unless `ANALYZE_FOOD_TOKEN` is set on Netlify** (returns 503), and then requires a matching `X-Food-Token` header. Before v37 it was open to anyone when the token was unset. When wiring the UI to it: a token hard-coded in `index.html` is public (repo and site are both public), so it only slows down casual abuse — put a spend cap on the gateway key as well.
+**The app is no longer network-free.** `netlify/functions/analyze-food.js` serves `POST /api/analyze-food`. *(v36–v39 notes about `ANALYZE_FOOD_TOKEN` / `X-Food-Token` are superseded — see the v40 section above.)*
 
 **v37 fixes (`sw.js` → v37, app label → v37):**
 - `saveState()` now carries **unknown top-level keys** through every save (`unknownTopKeys`, filled in `loadState()` for schema ≥ 4 only — v3 blobs' top-level keys are the old schema and must not be carried). Before this, a build older than the data dropped anything newer at the top level — which is exactly how pre-v36 devices drop `food`, and would have repeated with the next top-level addition.
@@ -72,7 +88,7 @@ Validation: `node tests/workout.test.cjs` checks scheduling, skips, pins, histor
 
 ## What this project is
 
-A personal workout and food tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No accounts. Network use: optional Supabase sync (Rule #12) and a not-yet-wired food-photo Netlify function (see the v36/v37 update above).
+A personal workout and food tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No accounts. Network use: optional Supabase sync (Rule #12) and the food-photo Netlify function (see the v40 update above).
 
 - `index.html` — **the entire app.** HTML, CSS and JS in one file (~1,600 lines).
 - `sw.js` — service worker. Network-first for `index.html`, cache-first for icons.
@@ -295,7 +311,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v39 Gate 2 commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v39 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v40 Gate 3 commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v40 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

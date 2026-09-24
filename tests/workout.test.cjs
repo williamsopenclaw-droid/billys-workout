@@ -6,7 +6,10 @@ const html = fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
 assert.equal(scripts.length,1);
 new vm.Script(scripts[0][1]);
-let checks=0;
+let checks=0, finished=false;
+// An async test that never settles lets Node exit quietly with code 0 — which
+// looks like a pass. Treat not reaching the end as a failure.
+process.on('exit',()=>{ if(!finished){ console.error('TESTS DID NOT FINISH after '+checks+' assertions'); process.exitCode=1; } });
 function app(date='2026-09-20', saved=null){
   const elements=new Map(), memory=new Map(), listeners={};
   if(saved) memory.set('caprica_workout_v2',JSON.stringify(saved));
@@ -299,21 +302,124 @@ eq(g2.run("food.goals"),{kcal:2400,proteinG:170,carbsG:250});
 eq(JSON.parse(g2.memory.get('caprica_workout_v2')).food.goals,{kcal:2400,proteinG:170,carbsG:250});
 ok(g2.run("renderFoodToday()").includes(' / 2400'));
 eq(app('2026-09-23',JSON.parse(g2.memory.get('caprica_workout_v2'))).run("food.goals.kcal"),2400);
-// Food-photo function: off unless the token is set, and every schema property is required (strict mode).
 (async()=>{
+  // --- Gate 3: food-photo function ---
   const {pathToFileURL}=require('node:url');
   const fn=(await import(pathToFileURL(path.join(__dirname,'..','netlify','functions','analyze-food.js')).href)).default;
-  const req=(h={})=>new Request('http://x/api/analyze-food',{method:'POST',headers:h,body:JSON.stringify({photoBase64:'data:image/png;base64,AAAA'})});
-  delete process.env.ANALYZE_FOOD_TOKEN;
-  eq((await fn(req())).status,503);
-  process.env.ANALYZE_FOOD_TOKEN='t0ken';
-  eq((await fn(req({'X-Food-Token':'wrong'}))).status,401);
-  process.env.OPENAI_API_KEY='k';process.env.OPENAI_BASE_URL='http://gw';
-  let sent;const realFetch=global.fetch;
-  global.fetch=async(url,o)=>{sent=JSON.parse(o.body);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({items:[{name:'Egg',grams:50,kcal:70,proteinG:6,carbsG:0,fatG:5,confidence:'high',notes:''}],totals:{kcal:1,proteinG:1,carbsG:1,fatG:1},assumptions:[],warnings:[]})}}]}),{status:200});};
-  const res=await fn(req({'X-Food-Token':'t0ken'}));global.fetch=realFetch;
-  eq(res.status,200);
-  eq((await res.json()).totals.kcal,70); // totals recomputed from items, not trusted
+  const KEY='bw-'+'a1'.repeat(24);
+  const PHOTO='data:image/jpeg;base64,'+'A'.repeat(400);
+  const aiOk=(parsed)=>({status:200,body:{choices:[{message:{content:JSON.stringify(parsed)}}]}});
+  const egg={items:[{name:'Egg',grams:50,kcal:70,proteinG:6,carbsG:0,fatG:5,confidence:'high',notes:''}],totals:{kcal:1,proteinG:1,carbsG:1,fatG:1},assumptions:['One egg'],warnings:[]};
+  // Routes fetch by host: Supabase (sync-code check) or the AI gateway. Records every call and every log line.
+  async function call({key=KEY,body={photoBase64:PHOTO,description:'breakfast'},sb={status:200,body:[{updated_at:'t'}]},ai=aiOk(egg),envs={}}={}){
+    const calls=[],logs=[];const realFetch=global.fetch,realErr=console.error;
+    for(const k of ['OPENAI_API_KEY','OPENAI_BASE_URL','FOOD_AI_DISABLED','FOOD_AI_MODEL']) delete process.env[k];
+    Object.assign(process.env,{OPENAI_API_KEY:'gw-key',OPENAI_BASE_URL:'http://gw/v1'},envs);
+    for(const [k,v] of Object.entries(envs)) if(v===undefined) delete process.env[k];
+    global.fetch=async(url,o={})=>{calls.push({url:String(url),headers:o.headers||{},body:o.body});
+      const r=String(url).includes('supabase.co')?sb:ai;
+      if(r instanceof Error) throw r;
+      return new Response(typeof r.body==='string'?r.body:JSON.stringify(r.body),{status:r.status});};
+    console.error=(...a)=>logs.push(a.join(' '));
+    try{
+      const headers={'Content-Type':'application/json'}; if(key!==null) headers['X-Sync-Key']=key;
+      const res=await fn(new Request('http://x/api/analyze-food',{method:'POST',headers,body:typeof body==='string'?body:JSON.stringify(body)}));
+      return {status:res.status,json:await res.json(),calls,logs};
+    } finally { global.fetch=realFetch; console.error=realErr; }
+  }
+  // Auth is the sync code, checked against Supabase; nothing reaches the AI without it.
+  let r=await call({key:null}); eq([r.status,r.json.error,r.calls.length],[401,'unauthorized',0]);
+  r=await call({key:'short'}); eq([r.status,r.calls.length],[401,0]);
+  r=await call({key:'has spaces in it but long enough'}); eq([r.status,r.calls.length],[401,0]);
+  r=await call({sb:{status:200,body:[]}}); eq([r.status,r.calls.length],[401,1]);          // unknown code: Supabase only
+  eq(r.calls[0].headers['X-Sync-Key'],KEY);
+  r=await call({sb:{status:540,body:'paused'}}); eq([r.status,r.json.error,r.calls.length],[503,'verify_unavailable',1]); // fail closed
+  r=await call({sb:new Error('ENOTFOUND')}); eq([r.status,r.calls.length],[503,1]);
+  r=await call({envs:{FOOD_AI_DISABLED:'1'}}); eq([r.status,r.json.error,r.calls.length],[503,'disabled',0]);
+  r=await call({envs:{OPENAI_API_KEY:undefined}}); eq([r.status,r.json.error,r.calls.length],[503,'not_configured',1]);
+  // Input checks: only real base64 JPEG/PNG/WebP, size-capped.
+  for (const bad of ['data:text/plain;base64,AAAA','data:image/gif;base64,AAAA','data:image/jpeg;base64,AA<script>','data:image/svg+xml;base64,AAAA','https://x/y.jpg',42]){
+    r=await call({body:{photoBase64:bad}}); eq([r.status,r.json.error],[400,'bad_request']);
+  }
+  r=await call({body:'not json'}); eq(r.status,400);
+  r=await call({body:{photoBase64:'data:image/jpeg;base64,'+'A'.repeat(6*1024*1024)}}); eq([r.status,r.json.error],[413,'too_large']);
+  // Success: the AI request carries no sync code, the schema is strict-complete, totals are recomputed.
+  r=await call({envs:{FOOD_AI_MODEL:'test-model'}});
+  eq(r.status,200); eq(r.json.totals.kcal,70); eq(r.json.model,'test-model'); eq(r.json.assumptions,['One egg']);
+  const aiCall=r.calls.find(c=>c.url.startsWith('http://gw/v1/chat/completions'));
+  ok(aiCall); ok(!JSON.stringify(aiCall.headers).includes(KEY)); ok(!aiCall.body.includes(KEY));
+  const sent=JSON.parse(aiCall.body); eq(sent.model,'test-model');
   (function walk(s){ if(s&&s.type==='object'&&s.properties){ eq([...s.required].sort(),Object.keys(s.properties).sort()); Object.values(s.properties).forEach(walk);} if(s&&s.items) walk(s.items); })(sent.response_format.json_schema.schema);
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, sync-merge, navigation and food function.');
+  // The model's output is cleaned: numbers clamped, strings cut, item count capped, unknown confidence -> low.
+  const junk={items:Array.from({length:40},(_,i)=>({name:i===0?'x'.repeat(300):'Item '+i,grams:-5,kcal:i===0?99999:'abc',proteinG:NaN,carbsG:10,fatG:1,confidence:i===0?'sure':'medium',notes:'n'})),totals:{kcal:1},assumptions:[],warnings:['w'.repeat(500)]};
+  r=await call({ai:aiOk(junk)});
+  eq([r.status,r.json.items.length,r.json.items[0].name.length,r.json.items[0].kcal,r.json.items[0].grams,r.json.items[0].proteinG,r.json.items[0].confidence,r.json.items[1].kcal],[200,25,80,5000,0,0,'low',0]);
+  eq(r.json.totals.carbsG,250); eq(r.json.warnings[0].length,200);
+  r=await call({ai:aiOk({items:[],totals:{},assumptions:[],warnings:[]})}); eq([r.status,r.json.error],[422,'no_items']);
+  // Upstream failures give a plain message, never the upstream body; the logs never hold the sync code.
+  r=await call({ai:{status:500,body:'internal detail sk-LEAKY-12345'}});
+  eq([r.status,r.json.error],[502,'upstream']); ok(!JSON.stringify(r.json).includes('LEAKY'));
+  ok(r.logs.length && !r.logs.join(' ').includes('LEAKY') && !r.logs.join(' ').includes(KEY));
+  r=await call({ai:{status:429,body:'slow down'}}); eq([r.status,r.json.error],[429,'busy']);
+  r=await call({ai:{status:200,body:{choices:[{message:{content:'not json'}}]}}}); eq([r.status,r.json.error],[502,'bad_output']);
+  r=await call({ai:new Error('socket hang up')}); eq([r.status,r.json.error],[502,'upstream']);
+  ok(!r.logs.join(' ').includes(KEY));
+  eq((await fn(new Request('http://x/api/analyze-food'))).status,405);
+
+  // --- Gate 3: app side ---
+  const p=app('2026-09-23');
+  const realCompress=p.run("compressPhoto");
+  // Without Sync there's no way to authenticate: explain, don't call.
+  p.run("openMealEditor('2026-09-23',null);startMealPhoto()");
+  ok(p.el('toast').textContent.includes('Sync'));
+  p.memory.set('caprica_workout_sync_key',KEY);
+  // The request goes to the function with the sync code in a header, never the URL.
+  p.run("compressPhoto=async()=>'data:image/jpeg;base64,AAAA';window.__calls=[];"
+   +"fetch=async(u,o)=>{window.__calls.push({u,o});return {ok:true,status:200,json:async()=>window.__resp};}");
+  p.run("window.__resp={items:[{name:'Scrambled eggs',grams:150,kcal:230,proteinG:18,carbsG:2,fatG:16,confidence:'medium',notes:'butter assumed'},{name:'<img src=x onerror=alert(1)>',kcal:-40,proteinG:'9',confidence:'??'}],assumptions:['2 large eggs'],warnings:['<b>Oil unknown</b>']}");
+  p.run("window._mealEditor.ai={desc:'2 eggs, toast'}");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  const c0=p.run("window.__calls[0]");
+  eq(c0.u,'/api/analyze-food'); eq(c0.o.headers['X-Sync-Key'],KEY); ok(!c0.u.includes(KEY));
+  eq(JSON.parse(c0.o.body).description,'2 eggs, toast');
+  // Result lands in the editor as editable rows, replacing the blank starter row; nothing is saved yet.
+  eq(p.run("window._mealEditor.items.map(i=>[i.name,i.kcal,i.proteinG,i.source,i.confidence])"),
+    [['Scrambled eggs',230,18,'ai','medium'],['<img src=x onerror=alert(1)>',0,9,'ai','low']]);
+  eq(p.run("(food.mealsByDay['2026-09-23']||[]).length"),0);
+  const modal=p.el('modal').innerHTML;
+  ok(modal.includes('nothing is saved until you tap Save')); ok(modal.includes('Assumed: 2 large eggs'));
+  ok(!modal.includes('<img src=x')); ok(!modal.includes('<b>Oil')); ok(modal.includes('AI estimate · medium confidence'));
+  // The user edits a number, then saves: AI markers survive, and the meal is flagged.
+  p.run("window._mealEditor.items[1].name='Toast';window._mealEditor.items[1].kcal='80';mealSaveDraft()");
+  eq(p.run("food.mealsByDay['2026-09-23'][0].items.map(i=>[i.name,i.kcal,i.source])"),[['Scrambled eggs',230,'ai'],['Toast',80,'ai']]);
+  eq(p.run("food.mealsByDay['2026-09-23'][0].aiAssisted"),true);
+  // A second photo adds to rows already typed rather than replacing them.
+  p.run("openMealEditor('2026-09-23',null);window._mealEditor.items=[{name:'Coffee',kcal:'5'}];window.__resp={items:[{name:'Banana',kcal:105,confidence:'high'}]}");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  eq(p.run("window._mealEditor.items.map(i=>i.name)"),['Coffee','Banana']);
+  // Errors show the server's plain message (escaped); a failure never touches the draft's rows.
+  p.run("fetch=async()=>({ok:false,status:401,json:async()=>({message:'This device\\'s sync code wasn\\'t recognised. <i>x</i>'})})");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  eq(p.run("window._mealEditor.ai.status"),'error'); ok(p.el('modal').innerHTML.includes('wasn&#39;t recognised') || p.el('modal').innerHTML.includes("wasn't recognised"));
+  ok(!p.el('modal').innerHTML.includes('<i>x</i>')); eq(p.run("window._mealEditor.items.length"),2);
+  p.run("fetch=async()=>{throw new Error('net')}");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  ok(p.run("window._mealEditor.ai.message").includes('Couldn\'t reach'));
+  p.run("fetch=async()=>({ok:true,status:200,json:async()=>({items:[]})})");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  ok(p.run("window._mealEditor.ai.message").includes('No food'));
+  // A result that arrives after the editor was closed is dropped, not applied or saved.
+  p.run("window.__resp={items:[{name:'Late',kcal:1}]};let __release;compressPhoto=()=>new Promise(r=>{__release=()=>r('data:image/jpeg;base64,AAAA')});"
+   +"fetch=async()=>({ok:true,status:200,json:async()=>window.__resp})");
+  const pending=p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  p.run("mealCancel();__release()"); await pending;
+  eq(p.run("window._mealEditor"),null);
+  ok(!JSON.stringify(p.run("food.mealsByDay")).includes('Late'));
+  // Non-photos are refused before any upload.
+  await realCompress({type:'application/pdf',size:10}).then(()=>ok(false),e=>ok(e.message.includes('isn\'t a photo')));
+  await realCompress({type:'image/jpeg',size:40*1024*1024}).then(()=>ok(false),e=>ok(e.message.includes('too large')));
+  // Photos are never kept: nothing image-like in saved state.
+  ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
+  finished=true;
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, sync-merge, navigation, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});
