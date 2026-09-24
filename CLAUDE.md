@@ -14,6 +14,20 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 23, 2026 update — v38, Gate 1a: sync you can trust, Food on any day
+
+William is developing Food in gates: **1** reliable manual Food (1a done here), **2** meal categories + editable goals, **3** AI photo analysis. Don't start a later gate's work early. His Sept 22–23 food log goes in through the app/data layer once macros are known — never hard-coded, and never with invented numbers.
+
+- **Screen/tab position is per-device and never synced.** Stored in `caprica_workout_v2_view` (`saveViewPrefs()`/`applyViewPrefs()`); `switchSection()` and `setFoodTab()` no longer call `saveState()`. Before v38 they did, and `viewState` rode in the synced blob, so merely switching tabs marked the device dirty and turned the other device's next change into a conflict. A v36–v37 blob's `viewState` is read only as a first-load fallback. **Don't route navigation through `saveState()` again.** (`workoutMode` — gym/travel — is still in the blob, as it always was.)
+- **Foreground/background sync.** `visibilitychange` → visible calls `resumeSync()` (skipped while a modal is open, because a clean pull reloads the page and would lose a half-typed meal); → hidden flushes a pending push immediately instead of waiting out the 3s debounce. Conflict handling is unchanged (Rule #12).
+- **Food on any past day.** `foodDay()` is the day the Food screen shows and logs to (`viewState.foodDay`, null = today, session-only, clamped to ≤ today in both `setFoodDay()` and `foodDay()`). Day arrows, "Back to today", tappable History cards, and History paging by week (`viewState.foodHistoryPage`). Log Meal, saved meals and recipes all log to `foodDay()`; Saved/Recipes show "Logging to …" when it isn't today.
+- **Deletes confirm** (meal, saved meal, recipe). **Numbers are validated** on save (`foodRowError()`): blank = 0, otherwise a finite number ≥ 0; recipe portions > 0. **Meal time is escaped** — it was the one unescaped Food field.
+- Logging a saved meal now always gives items fresh ids (it reused the saved meal's, so repeated logs shared ids).
+
+Tests: 115 assertions. Each Gate 1a behaviour was mutation-checked — thirteen deliberate breakages, each made the suite fail. Known cosmetic issue left alone: the Food tab bar is ~10px wider than a 375px phone, clipping "Recipes" slightly.
+
+---
+
 ## September 23, 2026 update — v36 food tracking, v37 hardening
 
 **v36 (Sept 21–23, built outside Claude, commits `90a60e5`, `651e301`, `a921380`)** added a Food section beside Workout: meals per day, daily kcal/protein goals, saved one-tap meals, and meal-prep recipes logged one portion at a time. State is a **top-level `food` object** in the same `caprica_workout_v2` blob (not inside `store`), so it rides along with save, backup, restore and sync. Totals are always recomputed from items (`mealMacros()`); a stored `totals` is ignored. All food UI is event-delegated via `data-act`/`data-input` — no user text in inline `onclick`. `90a60e5` shipped a parse error (blank app) that `651e301` fixed a day later — the syntax check (`node tests/check_syntax.cjs`) exists to prevent a repeat.
@@ -85,6 +99,7 @@ No `package.json`, no bundler. The only CI is the Supabase keep-alive workflow. 
 
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
+- `caprica_workout_v2_view` — this device's screen/tab (`{section, foodTab}`). Never synced, never in backups; losing it just resets the view.
 - `caprica_workout_sync_key` — the shared secret linking devices. **Never synced and never in the repo**; it's the only thing protecting the row. Same value typed on every device.
 - `caprica_workout_sync_meta` — `{syncedAt, dirty, lastSync}`. `syncedAt` is the server `updated_at` we last agreed with; `dirty` means this device has changes the server hasn't got.
 - `caprica_workout_v2_pre_restore` — written by **Restore** before it overwrites anything, so a wrong file picked on the wrong device is recoverable. Overwritten on each restore; it is a single undo step, not a history.
@@ -268,7 +283,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through commit `a921380` (2026-09-23), plus the v37 commit that wrote this line.** Before writing new entries, run `git log a921380..HEAD --oneline` — anything beyond the v37 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v38 Gate 1a commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v38 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

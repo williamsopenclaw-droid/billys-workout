@@ -316,6 +316,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-item-grid .food-item-name{grid-column:1 / -1}
 .food-item-del{border:none;background:var(--card);color:var(--muted);font-size:16px;width:30px;height:30px;border-radius:8px;cursor:pointer;flex-shrink:0}
 .food-item-del:active{color:var(--red)}
+/* v38: any-day Food navigation */
+.food-daynav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.food-daynav .mini-btn{font-size:14px;padding:8px 14px;min-width:44px}
+.food-daynav-label{font-size:14px;font-weight:700;text-align:center;flex:1}
+.food-daynav-spacer{min-width:44px}
+.food-hint{font-size:12px;color:var(--accent);margin-bottom:10px}
+.food-day-card{cursor:pointer}.food-day-card:active{background:var(--card)}
+.food-meal-del{padding:4px 8px;margin-right:-8px}
 </style>
 </head>
 <body>
@@ -1092,11 +1100,24 @@ function saveState(){
       travelProgression: TRAVEL_PROGRESSION,
       store,
       food,                               // v36: see blankFood() above
-      viewState: { section: viewState.section, foodTab: viewState.foodTab },
+      // No viewState: which screen/tab you're on is per-device (VIEW_LS below).
+      // v36–v37 synced it, so merely switching tabs marked the device dirty and
+      // turned the next pull from another device into a conflict.
     }));
   } catch(e){ console.error('Save failed', e); toast('⚠️ Could not save — storage may be full'); return; }
   // Sync is best-effort and debounced; a failure here must never affect saving.
   try { markSyncDirty(); scheduleSync(); } catch(e){}
+}
+
+// Per-device UI position. Never synced, never marks anything dirty.
+const VIEW_LS = LS_KEY + '_view';
+function saveViewPrefs(){
+  try { localStorage.setItem(VIEW_LS, JSON.stringify({ section: viewState.section, foodTab: viewState.foodTab })); } catch(e){}
+}
+function applyViewPrefs(v){
+  if (!v) return;
+  if (v.section === 'workout' || v.section === 'food') viewState.section = v.section;
+  if (['today','history','saved','recipes'].includes(v.foodTab)) viewState.foodTab = v.foodTab;
 }
 
 const LEGACY_SUNDAY = '2026-06-07';   // week 0, day 0 in the old schema
@@ -1153,6 +1174,10 @@ function migrateV3(data){
 }
 
 function loadState(){
+  let prefs = null;
+  try { prefs = JSON.parse(localStorage.getItem(VIEW_LS) || 'null'); } catch(e){}
+  applyViewPrefs(prefs);
+
   let raw = null;
   try { raw = localStorage.getItem(LS_KEY); } catch(e){ return; }
   if (!raw) return;
@@ -1169,12 +1194,9 @@ function loadState(){
   if (data.progression)       Object.assign(PROGRESSION, data.progression);
   if (data.travelProgression) Object.assign(TRAVEL_PROGRESSION, data.travelProgression);
   if (data.workoutMode)       workoutMode = data.workoutMode;
-  if (data.viewState && (data.viewState.section === 'workout' || data.viewState.section === 'food')){
-    viewState.section = data.viewState.section;
-  }
-  if (data.viewState && ['today','history','saved','recipes'].includes(data.viewState.foodTab)){
-    viewState.foodTab = data.viewState.foodTab;
-  }
+  // A v36–v37 blob's synced viewState is only a fallback for the first load
+  // after upgrading; this device's own prefs (read above) win.
+  if (!prefs) applyViewPrefs(data.viewState);
 
   if ((data._schemaVersion || 0) >= 4 && data.store){
     ['gym','travel'].forEach(m => {
@@ -1292,7 +1314,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v37 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v38 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -1845,7 +1867,7 @@ function switchSection(section){
     if (el) el.style.display = section === 'workout' ? '' : 'none';
   });
   document.querySelectorAll('.section-seg').forEach(b => b.classList.toggle('active', b.dataset.section === section));
-  saveState();
+  saveViewPrefs();                     // not saveState(): navigation isn't a data change
   render();
 }
 
@@ -1898,24 +1920,50 @@ function mealCard(meal, ds){
   const tm = mealMacros(meal);
   return '<div class="food-meal-card" data-act="edit-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">'
     + '<div class="food-meal-row"><span class="food-meal-name">' + esc(meal.name || 'Meal') + '</span>'
-    + '<span class="food-meal-time">' + (meal.time || '') + '</span></div>'
+    + '<span class="food-meal-time">' + esc(meal.time || '') + '</span></div>'
     + '<div class="food-meal-stats"><span>' + Math.round(tm.kcal) + ' kcal</span>'
     + '<span>' + Math.round(tm.proteinG) + 'g P</span>'
     + '<span class="food-meal-del" data-act="delete-meal" data-ds="' + esc(ds) + '" data-id="' + esc(meal.id || '') + '">×</span></div></div>';
 }
 
+// The day the Food screen is showing and logging to. null = today, so it
+// follows a midnight rollover. Session-only: never saved, never synced.
+function foodDay(){
+  const d = viewState.foodDay, t = todayStr();
+  return (d && d < t) ? d : t;
+}
+function setFoodDay(ds){
+  viewState.foodDay = (ds && ds < todayStr()) ? ds : null;
+  viewState.foodTab = 'today';
+  render();
+}
+function foodLoggingHint(){
+  const ds = foodDay();
+  return ds === todayStr() ? '' : '<div class="food-hint">Logging to ' + esc(fmtLong(ds)) + '</div>';
+}
+
 function renderFoodToday(){
-  const ds = todayStr();
+  const ds = foodDay();
+  const isToday = ds === todayStr();
   const totals = foodTotalsForDay(ds);
   const meals = (food.mealsByDay && food.mealsByDay[ds]) || [];
   const goals = food.goals || { kcal: 2200, proteinG: 160 };
   const remaining = Math.max(0, (goals.kcal || 0) - totals.kcal);
-  let h = '<div class="food-today"><div class="food-progress">';
+  let h = '<div class="food-today">';
+  h += '<div class="food-daynav">'
+    + '<button class="mini-btn" data-act="food-day-prev" aria-label="Previous day">‹</button>'
+    + '<span class="food-daynav-label">' + (isToday ? 'Today' : esc(fmtLong(ds))) + '</span>'
+    + (isToday ? '<span class="food-daynav-spacer"></span>'
+               : '<button class="mini-btn" data-act="food-day-next" aria-label="Next day">›</button>')
+    + '</div>';
+  if (!isToday) h += '<button class="btn btn-secondary" data-act="food-day-today" style="margin-bottom:10px">Back to today</button>';
+  h += '<div class="food-progress">';
   h += progressBar(totals.kcal, goals.kcal, 'Calories', 'accent');
   h += progressBar(totals.proteinG, goals.proteinG, 'Protein', 'protein');
   h += '<div class="food-remaining">' + Math.round(remaining) + ' kcal remaining</div></div>';
   if (meals.length === 0){
-    h += '<div class="food-empty">No meals logged yet today. Tap below to log your first meal.</div>';
+    h += '<div class="food-empty">' + (isToday ? 'No meals logged yet today. Tap below to log your first meal.'
+                                              : 'No meals logged on this day.') + '</div>';
   } else {
     h += '<div class="food-meals-list">';
     meals.forEach(m => { h += mealCard(m, ds); });
@@ -1926,9 +1974,10 @@ function renderFoodToday(){
 }
 
 function renderFoodHistory(){
-  const today = todayStr();
+  const page = viewState.foodHistoryPage || 0;          // 0 = the last 7 days, 1 = the 7 before, ...
+  const end = addDays(todayStr(), -7 * page);
   const days = [];
-  for (let i = 0; i < 7; i++) days.push({ d: addDays(today, -i), ...foodTotalsForDay(addDays(today, -i)) });
+  for (let i = 0; i < 7; i++) days.push({ d: addDays(end, -i), ...foodTotalsForDay(addDays(end, -i)) });
   const w = days.reduce((a, x) => ({
     kcal: a.kcal + x.kcal, proteinG: a.proteinG + x.proteinG,
     daysLogged: a.daysLogged + (x.count > 0 ? 1 : 0)
@@ -1937,11 +1986,16 @@ function renderFoodHistory(){
   const goal = (food.goals || {}).kcal || 2200;
   let h = '<div class="food-history"><div class="food-weekly-avg">'
     + '<div class="big">' + Math.round(w.kcal / denom) + ' kcal</div>'
-    + '<div class="sub">avg / day this week (' + w.daysLogged + ' day' + (w.daysLogged === 1 ? '' : 's') + ' with food)</div>'
+    + '<div class="sub">avg / day, ' + (page === 0 ? 'last 7 days' : esc(fmtShort(days[6].d)) + ' – ' + esc(fmtShort(end)))
+    + ' (' + w.daysLogged + ' day' + (w.daysLogged === 1 ? '' : 's') + ' with food)</div>'
     + '<div class="sub">' + Math.round(w.proteinG / denom) + ' g protein avg</div></div>';
+  h += '<div class="food-daynav">'
+    + '<button class="mini-btn" data-act="food-hist-older">‹ Older</button>'
+    + (page > 0 ? '<button class="mini-btn" data-act="food-hist-newer">Newer ›</button>' : '')
+    + '</div>';
   days.forEach(day => {
     const pct = goal ? Math.min(100, Math.round(day.kcal / goal * 100)) : 0;
-    h += '<div class="food-day-card"><div class="food-day-row">'
+    h += '<div class="food-day-card" data-act="food-open-day" data-ds="' + esc(day.d) + '"><div class="food-day-row">'
       + '<span class="food-day-name">' + fmtLong(day.d) + '</span>'
       + '<span class="food-day-pct">' + pct + '%</span></div>'
       + '<div class="food-day-stats">' + Math.round(day.kcal) + ' kcal · ' + Math.round(day.proteinG) + 'g P · '
@@ -1952,7 +2006,7 @@ function renderFoodHistory(){
 }
 
 function renderFoodSaved(){
-  let h = '<div class="food-saved">';
+  let h = '<div class="food-saved">' + foodLoggingHint();
   if (!food.savedMeals || food.savedMeals.length === 0){
     h += '<div class="food-empty">No saved meals yet. When you log a meal you can save it as a one-tap shortcut.</div>';
   } else {
@@ -1971,7 +2025,7 @@ function renderFoodSaved(){
 }
 
 function renderFoodRecipes(){
-  let h = '<div class="food-recipes">';
+  let h = '<div class="food-recipes">' + foodLoggingHint();
   if (!food.recipes || food.recipes.length === 0){
     h += '<div class="food-empty">No recipes yet. Add one to track calories and protein per portion.</div>';
   } else {
@@ -1981,7 +2035,7 @@ function renderFoodRecipes(){
       h += '<div class="food-recipe-card">'
         + '<div class="food-recipe-row"><span class="food-recipe-name">' + esc(r.name) + '</span>'
         + '<span class="food-recipe-per">' + per + ' kcal / portion</span></div>'
-        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + r.portions + ' portions</div>'
+        + '<div class="food-recipe-meta">' + (r.ingredients || []).length + ' ingredients · ' + esc(r.portions) + ' portions</div>'
         + '<div class="food-recipe-actions">'
         + '<button class="mini-btn" data-act="log-recipe" data-id="' + esc(r.id) + '">Log 1 portion</button>'
         + '<button class="mini-btn" data-act="edit-recipe" data-id="' + esc(r.id) + '">Edit</button>'
@@ -1997,7 +2051,7 @@ function renderFoodRecipes(){
 function renderFoodNav(){
   const tab = viewState.foodTab || 'today';
   return '<div class="section-toggle" style="margin-bottom:12px"><div class="section-toggle-inner" id="food-tab-nav">'
-    + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" data-act="food-tab">📊 Today</button>'
+    + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" data-act="food-tab">📊 Day</button>'
     + '<button class="section-seg' + (tab === 'history' ? ' active' : '') + '" data-tab="history" data-act="food-tab">📅 History</button>'
     + '<button class="section-seg' + (tab === 'saved' ? ' active' : '') + '" data-tab="saved" data-act="food-tab">⭐ Saved</button>'
     + '<button class="section-seg' + (tab === 'recipes' ? ' active' : '') + '" data-tab="recipes" data-act="food-tab">🧾 Recipes</button>'
@@ -2008,7 +2062,7 @@ function setFoodTab(tab){
   if (!['today','history','saved','recipes'].includes(tab)) return;
   viewState.foodTab = tab;
   document.querySelectorAll('#food-tab-nav .section-seg').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  saveState();
+  saveViewPrefs();
   render();
 }
 
@@ -2043,6 +2097,27 @@ function scrollToToday(){
 function foodUid(p){ return (p || 'm') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
 function foodNum(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
 function foodRound1(n){ return Math.round(n * 10) / 10; }
+// Editor-side check before anything is saved. Blank means 0; anything else
+// must be a plain non-negative number. foodNum() alone turned '-50' into -50
+// and 'abc' into a silent 0.
+const FOOD_FIELDS = { kcal: 'kcal', proteinG: 'protein', carbsG: 'carbs', fatG: 'fat', grams: 'grams' };
+function foodRowError(it, label){
+  for (const k of Object.keys(FOOD_FIELDS)){
+    const raw = it[k];
+    if (raw === '' || raw == null) continue;
+    const n = Number(raw);
+    if (!isFinite(n) || n < 0) return label + ': ' + FOOD_FIELDS[k] + ' must be a number, 0 or more';
+  }
+  return null;
+}
+function foodRowsError(rows, noun){
+  for (let i = 0; i < rows.length; i++){
+    const e = foodRowError(rows[i], (rows[i].name || '').trim() || (noun + ' ' + (i + 1)));
+    if (e) return e;
+  }
+  return null;
+}
+
 function blankItem(){ return { id: foodUid('i'), name: '', kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, grams: 0 }; }
 function blankIngredient(){ return blankItem(); }
 
@@ -2063,6 +2138,9 @@ function updateMeal(ds, id, patch){
 function deleteMeal(ds, id){
   const arr = food.mealsByDay && food.mealsByDay[ds];
   if (!arr) return;
+  const m = arr.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('Delete "' + (m.name || 'Meal') + '" from ' + fmtLong(ds) + '?')) return;
   food.mealsByDay[ds] = arr.filter(m => m.id !== id);
   saveState(); render();
   toast('Meal deleted');
@@ -2076,6 +2154,8 @@ function addSavedMeal(name, items){
   toast('Saved meal added');
 }
 function deleteSavedMeal(id){
+  const s = (food.savedMeals || []).find(x => x.id === id);
+  if (!s || !confirm('Remove saved meal "' + (s.name || 'Meal') + '"? Meals already logged are not affected.')) return;
   food.savedMeals = (food.savedMeals || []).filter(s => s.id !== id);
   saveState(); render();
   toast('Saved meal removed');
@@ -2083,12 +2163,13 @@ function deleteSavedMeal(id){
 function logSavedMeal(id){
   const s = (food.savedMeals || []).find(x => x.id === id);
   if (!s) return;
+  const ds = foodDay();
   viewState.foodTab = 'today';
-  addMealToDay(todayStr(), {
+  addMealToDay(ds, {
     id: foodUid('m'), name: s.name, time: '', notes: '',
-    items: (s.items || []).map(it => Object.assign({}, it, { id: it.id || foodUid('i') }))
+    items: (s.items || []).map(it => Object.assign({}, it, { id: foodUid('i') }))
   });
-  toast('Logged ' + s.name);
+  toast('Logged ' + s.name + (ds === todayStr() ? '' : ' to ' + fmtShort(ds)));
 }
 
 // ---- Recipes ----
@@ -2106,6 +2187,8 @@ function updateRecipe(id, patch){
   saveState(); render();
 }
 function deleteRecipe(id){
+  const r = (food.recipes || []).find(x => x.id === id);
+  if (!r || !confirm('Delete recipe "' + (r.name || 'Recipe') + '"? Portions already logged are not affected.')) return;
   food.recipes = (food.recipes || []).filter(r => r.id !== id);
   saveState(); render();
   toast('Recipe deleted');
@@ -2122,9 +2205,10 @@ function logRecipe(id){
     fatG:     foodRound1(foodNum(ing.fatG)     / portions),
     grams:    foodRound1(foodNum(ing.grams)    / portions)
   }));
+  const ds = foodDay();
   viewState.foodTab = 'today';
-  addMealToDay(todayStr(), { id: foodUid('m'), name: r.name + ' (1 portion)', time: '', notes: '', items: items });
-  toast('Logged ' + r.name);
+  addMealToDay(ds, { id: foodUid('m'), name: r.name + ' (1 portion)', time: '', notes: '', items: items });
+  toast('Logged ' + r.name + (ds === todayStr() ? '' : ' to ' + fmtShort(ds)));
 }
 
 // ---- Meal editor ----
@@ -2191,6 +2275,8 @@ function mealSaveDraft(){
   if (!d) return;
   const name = (d.name || '').trim();
   if (!name){ toast('Give the meal a name'); return; }
+  const bad = foodRowsError(d.items || [], 'Item');
+  if (bad){ toast('⚠️ ' + bad); return; }
   const items = (d.items || []).map(it => ({
     id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Item',
     kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
@@ -2245,7 +2331,10 @@ function recipeSaveDraft(){
   if (!d) return;
   const name = (d.name || '').trim();
   if (!name){ toast('Give the recipe a name'); return; }
-  const portions = foodNum(d.portions) > 0 ? foodNum(d.portions) : 1;
+  const portions = Number(d.portions);
+  if (d.portions === '' || !isFinite(portions) || portions <= 0){ toast('⚠️ Portions must be a number above 0'); return; }
+  const bad = foodRowsError(d.ingredients || [], 'Ingredient');
+  if (bad){ toast('⚠️ ' + bad); return; }
   const ingredients = (d.ingredients || []).map(it => ({
     id: it.id || foodUid('i'), name: (it.name || '').trim() || 'Ingredient',
     kcal: foodNum(it.kcal), proteinG: foodNum(it.proteinG), carbsG: foodNum(it.carbsG),
@@ -2304,7 +2393,13 @@ function handleFoodClick(e){
   const ds = el.dataset.ds;
   switch (act) {
     case 'food-tab': setFoodTab(el.dataset.tab); break;
-    case 'log-meal': openMealEditor(todayStr(), null); break;
+    case 'log-meal': openMealEditor(foodDay(), null); break;
+    case 'food-day-prev': setFoodDay(addDays(foodDay(), -1)); break;
+    case 'food-day-next': setFoodDay(addDays(foodDay(), 1)); break;
+    case 'food-day-today': setFoodDay(null); break;
+    case 'food-open-day': setFoodDay(ds); break;
+    case 'food-hist-older': viewState.foodHistoryPage = (viewState.foodHistoryPage || 0) + 1; render(); break;
+    case 'food-hist-newer': viewState.foodHistoryPage = Math.max(0, (viewState.foodHistoryPage || 0) - 1); render(); break;
     case 'edit-meal': openMealEditor(ds, id); break;
     case 'delete-meal': deleteMeal(ds, id); break;
     case 'log-saved-meal': logSavedMeal(id); break;
@@ -2411,7 +2506,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v37',
+    appVersion: 'v38',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
@@ -2626,6 +2721,17 @@ async function syncNow(silent){
     setSyncStatus('error', e.message);
     if (!silent) toast('⚠️ Sync failed — ' + e.message);
   } finally { syncBusy = false; }
+}
+
+// Foreground re-check. Skipped while a modal is open: a clean pull reloads the
+// page, which would throw away a half-typed meal or edit. The next resume, or
+// the push after saving, catches up.
+function resumeSync(){
+  if (!syncKey()) return false;
+  const ov = document.getElementById('modal-overlay');
+  if (ov && ov.classList.contains('show')) return false;
+  syncNow(true);
+  return true;
 }
 
 function countWorkouts(blob){
@@ -2985,6 +3091,16 @@ if (syncKey()){
   syncNow(true);                                   // pull anything newer on open
   window.addEventListener('online', () => syncNow(true));
 }
+// Re-check whenever the app comes back to the foreground. A phone PWA resumed
+// from the background, or a laptop tab left open, never re-runs the open-time
+// pull — so it sat on stale data until its next edit collided with the other
+// device's as a conflict.
+// Going to the background flushes a pending push now instead of waiting out
+// the 3s debounce, which a locked phone may never finish.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') resumeSync();
+  else if (syncKey() && syncMeta().dirty){ clearTimeout(syncTimer); syncNow(true); }
+});
 
 if ('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg => {

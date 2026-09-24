@@ -8,7 +8,7 @@ assert.equal(scripts.length,1);
 new vm.Script(scripts[0][1]);
 let checks=0;
 function app(date='2026-09-20', saved=null){
-  const elements=new Map(), memory=new Map();
+  const elements=new Map(), memory=new Map(), listeners={};
   if(saved) memory.set('caprica_workout_v2',JSON.stringify(saved));
   function el(id){
     if(!elements.has(id)) elements.set(id,{innerHTML:'',textContent:'',value:'',style:{},dataset:{},
@@ -19,14 +19,15 @@ function app(date='2026-09-20', saved=null){
   class Clock extends Date { constructor(...args){super(...(args.length?args:[date+'T08:00:00']));} static now(){return new Date(date+'T08:00:00').getTime();} }
   const ctx=vm.createContext({console,Date:Clock,
     localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,String(v)),removeItem:k=>memory.delete(k)},
-    document:{getElementById:el,querySelector:el,querySelectorAll:()=>[],addEventListener(){},createElement:()=>el('new')},
+    document:{getElementById:el,querySelector:el,querySelectorAll:()=>[],createElement:()=>el('new'),
+      addEventListener(t,f){(listeners[t]=listeners[t]||[]).push(f);}},
     window:{scrollY:0,innerHeight:900,scrollTo(){},addEventListener(){},matchMedia:()=>({matches:false})},
     navigator:{userAgent:'test',onLine:false},location:{reload(){}},
     setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},
     confirm:()=>true,prompt:()=>null,Blob,URL,crypto:require('node:crypto').webcrypto,
     fetch:()=>Promise.reject(new Error('offline'))});
   vm.runInContext(scripts[0][1],ctx);
-  return {run:s=>vm.runInContext(s,ctx),el,memory};
+  return {run:s=>vm.runInContext(s,ctx),el,memory,fire:t=>(listeners[t]||[]).forEach(f=>f({}))};
 }
 function eq(actual,expected){assert.deepEqual(actual === undefined ? undefined : JSON.parse(JSON.stringify(actual)),expected);checks++;}
 function ok(value){assert.ok(value);checks++;}
@@ -152,6 +153,86 @@ pull.run("applyRemote({updated_at:'t2',data:{_schemaVersion:5,store:{gym:{},trav
 eq(JSON.parse(pull.memory.get('caprica_workout_v2')).food.mealsByDay,{});
 eq(JSON.parse(pull.memory.get('caprica_workout_sync_meta')).dirty,false);
 eq(pull.run("countMeals("+JSON.stringify(fSaved)+")"),1);
+// --- Gate 1a ---
+// Navigation is per-device: it never marks sync dirty and never enters the synced blob.
+const nav=app('2026-09-23',fSaved);
+nav.memory.set('caprica_workout_sync_key','bw-'+'0'.repeat(48));
+nav.memory.set('caprica_workout_sync_meta',JSON.stringify({syncedAt:'t1',dirty:false}));
+const blobBefore=nav.memory.get('caprica_workout_v2');
+nav.run("switchSection('food');setFoodTab('history')");
+eq(JSON.parse(nav.memory.get('caprica_workout_sync_meta')).dirty,false);
+eq(nav.memory.get('caprica_workout_v2'),blobBefore);
+eq(JSON.parse(nav.memory.get('caprica_workout_v2_view')),{section:'food',foodTab:'history'});
+nav.run("addMealToDay('2026-09-23',{id:'n1',name:'Apple',items:[{kcal:95}]})");
+eq(JSON.parse(nav.memory.get('caprica_workout_sync_meta')).dirty,true);        // real edits still do
+eq(JSON.parse(nav.memory.get('caprica_workout_v2')).viewState,undefined);
+const navReload=app('2026-09-23',JSON.parse(nav.memory.get('caprica_workout_v2')));
+eq(navReload.run("viewState.section"),'workout');                              // prefs are this device's only
+// A v36-37 blob's synced viewState is a first-load fallback; this device's own prefs win over it.
+const oldView={...fSaved,viewState:{section:'food',foodTab:'saved'}};
+eq(app('2026-09-23',oldView).run("[viewState.section,viewState.foodTab]"),['food','saved']);
+const withPrefs=(()=>{const x=app('2026-09-23',oldView);x.memory.set('caprica_workout_v2_view',JSON.stringify({section:'workout',foodTab:'recipes'}));x.run("loadState()");return x;})();
+eq(withPrefs.run("[viewState.section,viewState.foodTab]"),['workout','recipes']);
+// Foreground re-check runs, except while a modal (possibly a half-typed meal) is open.
+eq(nav.run("resumeSync()"),true);
+nav.el('modal-overlay').classList.contains=()=>true;
+eq(nav.run("resumeSync()"),false);
+nav.el('modal-overlay').classList.contains=()=>false;
+// Going to the background pushes pending changes now; with nothing pending it does nothing.
+// (The stub is offline, so an attempted sync shows up as status 'offline'.)
+nav.run("syncState={status:'idle'};document.visibilityState='hidden'"); nav.fire('visibilitychange');
+eq(nav.run("syncState.status"),'offline');
+nav.memory.set('caprica_workout_sync_meta',JSON.stringify({syncedAt:'t1',dirty:false}));
+nav.run("syncState={status:'idle'}"); nav.fire('visibilitychange');
+eq(nav.run("syncState.status"),'idle');
+// Any-day logging: pick a past day, and Log Meal, saved meals and recipes all land on it.
+const day=app('2026-09-23');
+const click=(act,data={})=>day.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+click('food-open-day',{ds:'2026-09-22'});
+eq(day.run("[foodDay(),viewState.foodTab]"),['2026-09-22','today']);
+ok(day.run("renderFoodToday().includes('Tuesday, September 22')"));
+click('log-meal');
+eq(day.run("window._mealEditor.ds"),'2026-09-22');
+day.run("window._mealEditor.name='Breakfast';window._mealEditor.items=[{name:'Banana',kcal:'105',proteinG:'1.3',carbsG:'',fatG:'',grams:''}];mealSaveDraft()");
+eq(day.run("food.mealsByDay['2026-09-22'].map(m=>m.name)"),['Breakfast']);
+eq(day.run("foodTotalsForDay('2026-09-22').kcal"),105);
+eq(day.run("(food.mealsByDay['2026-09-23']||[]).length"),0);
+day.run("addRecipe('Chili',10,[{name:'Turkey',kcal:2000,proteinG:300}]);logRecipe(food.recipes[0].id)");
+day.run("addSavedMeal('Shake',[{name:'Whey',kcal:120,proteinG:25}]);logSavedMeal(food.savedMeals[0].id)");
+eq(day.run("food.mealsByDay['2026-09-22'].length"),3);
+eq(day.run("foodTotalsForDay('2026-09-22').kcal"),425);
+click('food-day-prev'); eq(day.run("foodDay()"),'2026-09-21');
+click('food-day-next'); click('food-day-next'); eq(day.run("foodDay()"),'2026-09-23'); // clamps at today
+day.run("setFoodDay('2026-12-25')"); eq(day.run("foodDay()"),'2026-09-23');          // no future days
+click('food-day-prev'); click('food-day-today'); eq(day.run("foodDay()"),'2026-09-23');
+// History: days are tappable, and paging goes back a week at a time.
+day.run("viewState.foodTab='history'");
+ok(day.run("renderFoodHistory().includes('data-act=\"food-open-day\" data-ds=\"2026-09-22\"')"));
+click('food-hist-older'); ok(day.run("renderFoodHistory().includes('data-ds=\"2026-09-16\"')"));
+ok(!day.run("renderFoodHistory().includes('data-ds=\"2026-09-22\"')"));
+click('food-hist-newer'); ok(day.run("renderFoodHistory().includes('data-ds=\"2026-09-22\"')"));
+// Deletes ask first; cancelling keeps the data.
+day.run("confirm=()=>false");
+const mealId=day.run("food.mealsByDay['2026-09-22'][0].id");
+day.run("deleteMeal('2026-09-22','"+mealId+"');deleteSavedMeal(food.savedMeals[0].id);deleteRecipe(food.recipes[0].id)");
+eq(day.run("[food.mealsByDay['2026-09-22'].length,food.savedMeals.length,food.recipes.length]"),[3,1,1]);
+day.run("confirm=()=>true;deleteMeal('2026-09-22','"+mealId+"')");
+eq(day.run("food.mealsByDay['2026-09-22'].length"),2);
+// Typed text is escaped, including the meal time.
+day.run("setFoodDay(null);addMealToDay('2026-09-23',{id:'x1',name:'<b>n</b>',time:'<img src=x onerror=alert(1)>',items:[]})");
+ok(!day.run("renderFoodToday()").includes('<img'));
+ok(!day.run("renderFoodToday()").includes('<b>n'));
+// Bad numbers are rejected rather than saved as negative or silent zero.
+for (const bad of ['-5','abc','1e999']){
+  day.run("openMealEditor('2026-09-23',null);window._mealEditor.name='Bad';window._mealEditor.items=[{name:'X',kcal:'100',proteinG:'"+bad+"'}];mealSaveDraft()");
+  eq(day.run("food.mealsByDay['2026-09-23'].length"),1);
+}
+day.run("openRecipeEditor(null);window._recipeEditor.name='R';window._recipeEditor.portions='0';recipeSaveDraft()");
+eq(day.run("food.recipes.length"),1);
+day.run("window._recipeEditor.portions='8';window._recipeEditor.ingredients=[{name:'Oil',kcal:'-1'}];recipeSaveDraft()");
+eq(day.run("food.recipes.length"),1);
+day.run("window._recipeEditor.ingredients=[{name:'Oil',kcal:'265',fatG:'30'}];recipeSaveDraft()");
+eq(day.run("food.recipes.length"),2);
 // Food-photo function: off unless the token is set, and every schema property is required (strict mode).
 (async()=>{
   const {pathToFileURL}=require('node:url');
@@ -168,5 +249,5 @@ eq(pull.run("countMeals("+JSON.stringify(fSaved)+")"),1);
   eq(res.status,200);
   eq((await res.json()).totals.kcal,70); // totals recomputed from items, not trusted
   (function walk(s){ if(s&&s.type==='object'&&s.properties){ eq([...s.required].sort(),Object.keys(s.properties).sort()); Object.values(s.properties).forEach(walk);} if(s&&s.items) walk(s.items); })(sent.response_format.json_schema.schema);
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, sync-merge and food function.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, sync-merge, navigation and food function.');
 })().catch(e=>{console.error(e);process.exit(1);});
