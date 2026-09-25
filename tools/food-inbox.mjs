@@ -134,5 +134,8 @@ async function main(argv){
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href){
-  main(process.argv.slice(2)).then(code => process.exit(code), e => { console.error(e.message); process.exit(1); });
+  // Set exitCode rather than calling process.exit(): exiting while fetch's
+  // sockets are still closing crashes Node on Windows (libuv assertion) and
+  // reports a misleading exit code.
+  main(process.argv.slice(2)).then(code => { process.exitCode = code; }, e => { console.error(e.message); process.exitCode = 1; });
 }
