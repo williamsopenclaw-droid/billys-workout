@@ -4,3 +4,87 @@
 
 [build.processing]
   skip_processing = true
+
+# The site publishes the whole repo folder, so without these the docs, tests,
+# tools and config would be readable at the app's address. None of them hold
+# secrets (the GitHub repo is public anyway) — this just keeps the site to the
+# app itself: index.html, sw.js, manifest.json, the icons, and /api/analyze-food.
+# Add any new non-app file or folder here. Verify after deploying: each path
+# below should return 404 and the app should still load.
+[[redirects]]
+  from = "/CLAUDE.md"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/README.md"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/CHANGELOG.md"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/FAILURE-MODES.md"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/tests/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/tools/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/supabase/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.github/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.mcp.json"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify.toml"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.gitignore"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.gitattributes"
+  to = "/404"
+  status = 404
+  force = true

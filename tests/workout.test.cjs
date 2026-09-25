@@ -508,6 +508,23 @@ clickI('import-apply'); eq(im.run("JSON.stringify(food.savedMeals)"),beforeForce
 ok(im.run("window._importSaved.result.errors[0]").includes('valid import text'));
 clickI('import-cancel'); eq(im.run("window._importSaved"),null);
 
+// --- Public site: only the app is served (netlify.toml hides everything else) ---
+{
+  const root=path.join(__dirname,'..');
+  const toml=fs.readFileSync(path.join(root,'netlify.toml'),'utf8').replace(/\r\n/g,'\n');
+  const blocks=toml.split('[[redirects]]').slice(1);
+  ok(blocks.length>=13);
+  for (const b of blocks){                                                           // every rule is a forced 404
+    ok(/\n\s*from = "\/[^"]+"/.test(b)); ok(/\n\s*status = 404\b/.test(b)); ok(/\n\s*force = true\b/.test(b));
+  }
+  const hidden=new Set(blocks.map(b=>b.match(/from = "\/([^"/*]+)(\/\*)?"/)[1]));
+  const APP=new Set(['index.html','sw.js','manifest.json','icon-192.png','icon-512.png']);
+  const IGNORE=new Set(['.git','.netlify','.claude','node_modules']);                  // never deployed / local only
+  const exposed=fs.readdirSync(root).filter(n=>!APP.has(n)&&!IGNORE.has(n)&&!hidden.has(n));
+  eq(exposed,[]);                                                                    // a new top-level file or folder must be added to netlify.toml
+  for (const a of APP) ok(!hidden.has(a));                                           // and the app itself is never hidden
+}
+
 (async()=>{
   // --- Claude inbox: app side ---
   const ib=app('2026-09-24');
@@ -759,5 +776,5 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, public-site rules, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});
