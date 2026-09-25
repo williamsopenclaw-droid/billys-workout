@@ -509,6 +509,134 @@ ok(im.run("window._importSaved.result.errors[0]").includes('valid import text'))
 clickI('import-cancel'); eq(im.run("window._importSaved"),null);
 
 (async()=>{
+  // --- Claude inbox: app side ---
+  const ib=app('2026-09-24');
+  ib.run("navigator.onLine=true;window.__calls=[];window.__rows=[];window.__fail=false;"
+    +"fetch=async(u,o)=>{o=o||{};window.__calls.push({u:String(u),method:o.method||'GET',h:o.headers||{}});if(window.__fail)throw new Error('offline');"
+    +"return {ok:true,status:200,json:async()=>(o.method==='DELETE'?[]:window.__rows)};}");
+  await ib.run("checkInbox(true)"); eq(ib.run("window.__calls.length"),0);            // no key: no network at all
+  // Setup creates a key in the synced food slice and shows it in the Sync panel.
+  ib.run("setupInbox()");
+  await new Promise(r=>setImmediate(r));                                            // let setup's own check finish (checks are single-flight)
+  const IBK=ib.run("inboxKey()"); ok(/^ib-[0-9a-f]{48}$/.test(IBK));
+  eq(JSON.parse(ib.memory.get('caprica_workout_v2')).food.inbox.key,IBK);
+  ok(ib.el('modal').innerHTML.includes(IBK)); ok(ib.el('modal').innerHTML.includes('data-act="inbox-off"'));
+  ok(app('2026-09-24',JSON.parse(ib.memory.get('caprica_workout_v2'))).run("inboxKey()")===IBK);   // survives reload
+  // Three rows: a good day, a future-dated one, and junk.
+  ib.run("window.__calls=[];window.__rows=["
+    +"{id:'r1',note:'Sep 24 <img src=x>',created_at:'t',payload:{days:[{date:'2026-09-24',meals:["
+    +"{category:'Breakfast',items:[{name:'Strawberries',kcal:24,grams:75},{name:'Blueberries',kcal:43,grams:75}]},"
+    +"{category:'Lunch',name:'Chicken stir-fry',notes:'from batch',items:[{name:'Rice',kcal:195,proteinG:4},{name:'<b>Chicken</b>',kcal:165,proteinG:31}]}]}]}},"
+    +"{id:'r2',note:'',created_at:'t',payload:{days:[{date:'2026-12-01',meals:[{category:'Dinner',items:[{kcal:1}]}]}]}},"
+    +"{id:'r3',note:'',created_at:'t',payload:'junk'}]");
+  await ib.run("checkInbox(true)");
+  const ibc0=ib.run("window.__calls[0]");
+  ok(ibc0.u.startsWith('https://sqmkjgubujrkxygsukng.supabase.co/rest/v1/food_inbox?select=')); eq(ibc0.h['X-Inbox-Key'],IBK); ok(!ibc0.u.includes(IBK));
+  eq(ib.run("inboxState.rows.map(r=>[r.id,!!r.days,!!r.errors])"),[['r1',true,false],['r2',false,true],['r3',false,true]]);
+  ok(ib.run("inboxState.rows[1].errors[0]").includes('future'));
+  ok(ib.run("renderFood()").includes('2 meals from Claude'));
+  eq(ib.run("(food.mealsByDay['2026-09-24']||[]).length"),0);                       // shown, not added
+  // Review: escaped, Accept only for usable ones.
+  ib.run("addMealToDay('2026-09-24',{id:'x',name:'Chicken stir-fry',category:'lunch',items:[{kcal:1}]})");
+  ib.run("openInboxReview()"); const rv=ib.el('modal').innerHTML;
+  ok(rv.includes('data-act="inbox-accept" data-id="r1"')); ok(!rv.includes('data-act="inbox-accept" data-id="r2"'));
+  ok(rv.includes("Can't use this suggestion")); ok(!rv.includes('<img')); ok(!rv.includes('<b>Chicken')); ok(rv.includes('already logged?'));
+  ok(rv.includes('Thursday, September 24')); ok(rv.includes('Breakfast</b>'));
+  ib.run("food.mealsByDay['2026-09-24']=[]");
+  // Accept adds the meals, records the id, persists, then deletes the row by id.
+  ib.run("switchSection('food');setFoodDay(null);setFoodTab('today')");
+  ok(ib.el('workout-container').innerHTML.includes('2 meals from Claude'));
+  ib.run("window.__calls=[];inboxAccept('r1')");
+  // ...and the screen behind the review sheet is redrawn at once (it used to stay stale until the sheet closed).
+  ok(ib.el('workout-container').innerHTML.includes('427 / 2200')); ok(!ib.el('workout-container').innerHTML.includes('2 meals from Claude'));
+  eq(ib.run("food.mealsByDay['2026-09-24'].map(m=>[m.name,m.category,m.addedBy,Math.round(mealMacros(m).kcal)])"),
+    [['Breakfast','breakfast','claude-inbox',67],['Chicken stir-fry','lunch','claude-inbox',360]]);
+  eq(ib.run("food.mealsByDay['2026-09-24'][1].notes"),'from batch');
+  ok(ib.run("food.inbox.done").includes('r1'));
+  ok(JSON.parse(ib.memory.get('caprica_workout_v2')).food.inbox.done.includes('r1'));
+  const ibDel=ib.run("window.__calls.find(c=>c.method==='DELETE')"); ok(ibDel.u.endsWith('food_inbox?id=eq.r1')); eq(ibDel.h['X-Inbox-Key'],IBK);
+  ib.run("inboxAccept('r1')"); eq(ib.run("food.mealsByDay['2026-09-24'].length"),2);  // never twice
+  // If the delete failed and the server still returns r1, it stays hidden.
+  await ib.run("checkInbox(true)"); ok(!ib.run("inboxState.rows.map(r=>r.id)").includes('r1'));
+  // An unusable suggestion can't be accepted, even by calling Accept directly.
+  ib.run("inboxAccept('r2')"); eq(ib.run("food.mealsByDay['2026-12-01']"),undefined); ok(ib.run("inboxState.rows.map(r=>r.id)").includes('r2'));
+  // Accepted on another device (its done list arrived by sync) while still listed here: not added again.
+  ib.run("inboxState.rows.push(Object.assign({id:'r9',note:''},parseInboxPayload({days:[{date:'2026-09-23',meals:[{category:'Dinner',items:[{kcal:9}]}]}]})));food.inbox.done.push('r9')");
+  ib.run("inboxAccept('r9')"); eq(ib.run("food.mealsByDay['2026-09-23']"),undefined); ok(!ib.run("inboxState.rows.map(r=>r.id)").includes('r9'));
+  // Reject/Dismiss adds nothing, records the id, deletes the row.
+  ib.run("window.__calls=[];inboxReject('r2');inboxReject('r3')");
+  eq(ib.run("food.mealsByDay['2026-12-01']"),undefined);
+  ok(ib.run("food.inbox.done").includes('r2') && ib.run("food.inbox.done").includes('r3'));
+  eq(ib.run("window.__calls.filter(c=>c.method==='DELETE').length"),2);
+  ib.run("window.__rows=[]"); await ib.run("checkInbox(true)"); ok(!ib.run("renderFood()").includes('from Claude'));
+  // Network failure and offline are silent and harmless.
+  ib.run("window.__fail=true"); await ib.run("checkInbox(true)"); eq(ib.run("inboxState.busy"),false);
+  ib.run("window.__fail=false;navigator.onLine=false;window.__calls=[]"); await ib.run("checkInbox(true)"); eq(ib.run("window.__calls.length"),0);
+  ib.run("navigator.onLine=true");
+  // Throttled to once a minute unless forced.
+  ib.run("window.__calls=[]"); await ib.run("checkInbox()"); eq(ib.run("window.__calls.length"),0);
+  // The done list is capped.
+  ib.run("for(let i=0;i<250;i++) markInboxDone('z'+i)"); eq(ib.run("food.inbox.done.length"),200); eq(ib.run("food.inbox.done[199]"),'z249');
+  // Turning off deletes pending rows (by filter, never by key in the URL) and forgets the key.
+  ib.run("window.__calls=[];turnOffInbox()");
+  eq(ib.run("inboxKey()"),''); const ibOff=ib.run("window.__calls[0]"); eq([ibOff.method,ibOff.u.endsWith('food_inbox?id=not.is.null'),ibOff.h['X-Inbox-Key']],['DELETE',true,IBK]);
+  ok(ib.el('modal').innerHTML.includes('data-act="inbox-setup"'));
+  // Payload validation.
+  const pv=p=>ib.run("parseInboxPayload("+JSON.stringify(p)+")");
+  const okMeal={category:'Lunch',items:[{kcal:1}]};
+  for (const [p,msg] of [[{},'No days'],[{days:[{date:'2026-02-30',meals:[okMeal]}]},'YYYY-MM-DD'],[{days:[{date:'2026-09-25',meals:[okMeal]}]},'future'],
+     [{days:[{date:'2026-09-24',meals:[okMeal]},{date:'2026-09-24',meals:[okMeal]}]},'twice'],[{days:Array.from({length:15},(_,i)=>({date:'2026-09-0'+((i%9)+1),meals:[okMeal]}))},'More than 14'],
+     [{days:[{date:'2026-09-24',meals:[]}]},'no meals'],[{days:[{date:'2026-09-24',meals:[{category:'Lunch',items:[]}]}]},'at least one item'],
+     [{days:[{date:'2026-09-24',meals:[{category:'Brunch',items:[{kcal:1}]}]}]},'unknown category'],
+     [{days:[{date:'2026-09-24',meals:[{category:'Lunch',items:[{kcal:-1}]}]}]},'kcal must be a number']]){
+    ok((pv(p).errors||[]).join(' ').includes(msg));
+  }
+  eq(pv({days:[{date:'2026-09-23',meals:[{category:'dinner',name:'x',time:'7 pm',items:[{kcal:'5'}]}]}]}).days[0].meals[0].time,'7 pm');
+
+  // --- Claude inbox: the posting script ---
+  const {pathToFileURL:p2u}=require('node:url');
+  const tool=await import(p2u(path.join(__dirname,'..','tools','food-inbox.mjs')).href);
+  eq(tool.readInboxKey({BILLYS_INBOX_KEY:' ib-abc123def456ghi789jkl '},'linux'),'ib-abc123def456ghi789jkl');
+  eq(tool.readInboxKey({},'linux'),'');
+  eq([tool.plausibleKey('ib-'+'a'.repeat(48)),tool.plausibleKey('short'),tool.plausibleKey('has space in it but long enough')],[true,false,false]);
+  eq(tool.checkPayload({days:[{date:'2026-09-24',meals:[{items:[{kcal:5}]}]}]},'2026-09-24'),[]);
+  ok(tool.checkPayload({days:[{date:'2026-09-25',meals:[{items:[{kcal:5}]}]}]},'2026-09-24')[0].includes('future'));
+  ok(tool.checkPayload({days:[{date:'24/09',meals:[{items:[{kcal:-1}]}]}]},'2026-09-24').join(' ').includes('YYYY-MM-DD'));
+  ok(tool.checkPayload({days:[{date:'2026-09-24',meals:[{items:[{kcal:'abc'}]}]}]},'2026-09-24').join(' ').includes('kcal must be a number'));
+  eq(tool.checkPayload({},'x'),['payload needs a non-empty "days" array']);
+  // A fake Supabase that enforces the same per-key rules as the real RLS policies.
+  // `leak` switches off one rule at a time: readAny (another key can read), noKeyRead
+  // (no key can read), deleteAny (another key can delete).
+  function fakeSupabase(leak={}){
+    const rows=[]; let n=0; const calls=[];
+    return {calls, fetch: async (url,o={})=>{
+      const u=new URL(url), key=(o.headers||{})['X-Inbox-Key'], m=o.method||'GET'; calls.push({url:String(url),m,h:o.headers||{},body:o.body});
+      const own=r=>!!key&&r.inbox_key===key;
+      let out=[];
+      if(m==='POST'){ const b=JSON.parse(o.body); if(b.inbox_key!==key) return new Response('rls',{status:403}); rows.push(Object.assign({id:'id'+(++n),created_at:'t'},b)); return new Response('',{status:201}); }
+      if(m==='GET') out=rows.filter(r=>own(r)||(key?leak.readAny:leak.noKeyRead));
+      if(m==='DELETE'){ const id=(u.searchParams.get('id')||'').replace('eq.',''); for(let i=rows.length-1;i>=0;i--) if(rows[i].id===id&&(own(rows[i])||leak.deleteAny)) out.push(...rows.splice(i,1)); }
+      return new Response(JSON.stringify(out),{status:200});
+    }};
+  }
+  const realFetch2=global.fetch;
+  try {
+    const sb=fakeSupabase(); global.fetch=sb.fetch;
+    const K='ib-'+'b'.repeat(48);
+    await tool.post(K,{days:[{date:'2026-09-24',meals:[okMeal]}]},'note');
+    const pc=sb.calls[0]; ok(pc.url.endsWith('/rest/v1/food_inbox')); ok(!pc.url.includes(K)); eq(pc.h['X-Inbox-Key'],K);
+    eq(JSON.parse(pc.body).inbox_key,K); eq(JSON.parse(pc.body).note,'note');
+    eq((await tool.pending(K)).length,1); eq((await tool.pending('ib-'+'c'.repeat(48))).length,0);
+    ok(!sb.calls.some(c=>c.url.includes(K)));                                     // key never in a URL
+    const st=await tool.selftest(); eq(st.length,5); ok(st.every(l=>l.startsWith('PASS')));
+    // Each kind of leak is caught by its own check.
+    for (const [leak,line] of [['readAny','another key cannot read them'],['noKeyRead','no key reads nothing'],['deleteAny','another key cannot delete them']]){
+      global.fetch=fakeSupabase({[leak]:true}).fetch;
+      const res=await tool.selftest();
+      ok(res.some(l=>l==='FAIL  '+line));
+    }
+  } finally { global.fetch=realFetch2; }
+
   // --- Gate 3: food-photo function ---
   const {pathToFileURL}=require('node:url');
   const fn=(await import(pathToFileURL(path.join(__dirname,'..','netlify','functions','analyze-food.js')).href)).default;
@@ -627,5 +755,5 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, sync-merge, navigation, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});

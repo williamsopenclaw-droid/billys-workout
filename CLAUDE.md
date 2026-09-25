@@ -14,6 +14,27 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 24, 2026 update — v46: Claude inbox (how Claude logs food for William)
+
+**This is the way to "add today's meals" when William asks.** Claude must not use or ask for the sync code. Instead Claude posts *suggestions* to the inbox; William reviews and accepts them in the app.
+
+**Posting (Claude):**
+1. Write the day as JSON (format at the top of `tools/food-inbox.mjs`; same item fields as saved-meal import, plus per-meal `category`, `name`, `notes`, `time`). Use real label/USDA numbers only — never invent values; leave a number out (= 0) and say so in `notes` when unknown.
+2. `node tools/food-inbox.mjs post day.json --note "Sep 24 — from your list"` → prints what was posted. `pending` lists what he hasn't reviewed; don't re-post a day that's still pending.
+3. Tell William it's waiting in the app (Food tab banner "📥 N meals from Claude").
+
+The key comes from `BILLYS_INBOX_KEY` (Windows user environment variable; the script reads the registry if the shell predates it). Never print it, put it in a URL, or paste it in chat. `node tools/food-inbox.mjs selftest` checks the table and its row security with two throwaway keys — it never touches the real inbox.
+
+**Server:** table `public.food_inbox` (`supabase/food_inbox.sql`, applied by William in the dashboard SQL Editor — the MCP connector can't see this project). RLS scopes insert/select/delete to rows whose `inbox_key` equals the `X-Inbox-Key` header; there's no update policy; payload < 256 KB. The inbox key can't read or change `workout_state`.
+
+**App:** Sync panel → 📥 Claude inbox → Set up (key `ib-` + 48 hex, stored in `food.inbox.key` so it syncs) / Check now / Turn off (deletes pending rows, forgets the key). `checkInbox()` runs on open and on returning to the foreground (throttled 60 s, single-flight, silent on any failure, skipped offline). It only *shows* suggestions: a banner on the Food screen opens the review sheet (days, categories, items, macros, notes, "already logged?" flags). **Nothing reaches the log until Accept.** `parseInboxPayload()` re-validates with the same rules as import (dates must be real and not in the future, ≤ 14 days, ≤ 20 meals/day); unusable ones can only be dismissed. Accept/Reject record the row id in `food.inbox.done` (synced, capped at 200) *before* deleting the row, so a failed delete or another device can never apply one twice. Accepted meals carry `addedBy: 'claude-inbox'`.
+
+Tests: 455 assertions, including a fake Supabase enforcing the same per-key rules; the selftest is proven to catch each kind of leak separately. 26 mutations, all caught. Found in browser testing and fixed: Accept didn't redraw the day behind the review sheet.
+
+**Mutation-testing gotcha (for whoever runs these next):** scratch copies of the repo must include every file the tests import (`tools/` since v46). A missing file makes *every* mutation "fail", which reads as "all caught" — check an unmutated copy passes first.
+
+---
+
 ## September 23, 2026 update — v45: import saved meals
 
 **Why it exists:** Claude can't write into William's data (it lives on his devices and behind his sync code, which Claude must not use). Import is the hand-off: Claude prepares text, William pastes it in the app (on any device — sync carries it to the others).
@@ -361,7 +382,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v45 saved-meal-import commit (2026-09-23).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v45 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v46 Claude-inbox commit (2026-09-24).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v46 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

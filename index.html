@@ -324,6 +324,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-import-row:first-of-type{border-top:none}
 .food-import-tag{font-size:10px;font-weight:700;padding:3px 6px;border-radius:6px;background:var(--green);color:var(--bg);flex-shrink:0;margin-top:2px}
 .food-import-tag.upd{background:var(--accent)}
+/* v46: Claude inbox */
+.food-inbox-banner{display:block;width:100%;text-align:left;font-family:inherit;font-size:13px;font-weight:700;color:var(--bg);background:var(--accent);border:none;border-radius:10px;padding:11px 14px;margin-bottom:12px;cursor:pointer}
+.food-inbox-card{background:var(--card);border-radius:10px;padding:10px;margin:10px 0}
+.food-inbox-note{font-size:12px;color:var(--muted);margin-bottom:6px;font-style:italic}
+.food-inbox-meal{padding:6px 2px;border-top:1px solid var(--border);font-size:13px}
+.food-inbox-dup{font-size:10px;font-weight:700;color:var(--bg);background:var(--red);border-radius:5px;padding:1px 5px;margin-left:4px}
+.food-inbox-setup{border-top:1px solid var(--border);margin-top:14px;padding-top:12px}
 .food-recipe-actions{display:flex;gap:6px;margin-top:8px}
 .food-recipe-actions .mini-btn{flex:1}
 .food-editor-items{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
@@ -1355,7 +1362,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v45 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v46 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2206,7 +2213,7 @@ function setFoodTab(tab){
 }
 
 function renderFood(){
-  let h = renderFoodNav();
+  let h = renderInboxBanner() + renderFoodNav();
   const tab = viewState.foodTab || 'today';
   if (tab === 'today') h += renderFoodToday();
   else if (tab === 'history') h += renderFoodHistory();
@@ -2507,6 +2514,29 @@ function resolveCategory(v){
   if (CATEGORY_ALIASES[n]) return { id: CATEGORY_ALIASES[n] };
   return { error: 'unknown category "' + String(v).slice(0, 40) + '"' };
 }
+// Shared by saved-meal import and the Claude inbox: validates a list of items,
+// pushing a specific message to `errors` and returning null on the first bad one.
+function parseImportItems(list, label, errors){
+  const items = [];
+  for (let ii = 0; ii < list.length; ii++){
+    const it = list[ii];
+    const at = label + ', item ' + (ii + 1);
+    if (!it || typeof it !== 'object' || Array.isArray(it)){ errors.push(at + ': not an item.'); return null; }
+    const out = { id: foodUid('i'),
+      name: (typeof it.name === 'string' ? it.name.replace(/\s+/g, ' ').trim().slice(0, IMPORT_LIMITS.name) : '') || 'Item' };
+    const src = { kcal: it.kcal, proteinG: it.proteinG != null ? it.proteinG : it.protein,
+                  carbsG: it.carbsG != null ? it.carbsG : it.carbs, fatG: it.fatG != null ? it.fatG : it.fat, grams: it.grams };
+    for (const k of Object.keys(src)){
+      const v = src[k];
+      if (v == null || v === ''){ out[k] = 0; continue; }
+      const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+      if (!isFinite(n) || n < 0 || n > IMPORT_LIMITS[k]){ errors.push(at + ': ' + FOOD_FIELDS[k] + ' must be a number from 0 to ' + IMPORT_LIMITS[k] + '.'); return null; }
+      out[k] = foodRound1(n);
+    }
+    items.push(out);
+  }
+  return items;
+}
 function parseSavedMealsImport(text){
   const errors = [];
   if (typeof text !== 'string' || !text.trim()) return { errors: ['Nothing to import — paste the text first.'] };
@@ -2533,24 +2563,8 @@ function parseSavedMealsImport(text){
     seen.add(key);
     if (!Array.isArray(m.items) || !m.items.length){ errors.push(label + ': needs at least one item.'); return; }
     if (m.items.length > IMPORT_LIMITS.items){ errors.push(label + ': more than ' + IMPORT_LIMITS.items + ' items.'); return; }
-    const items = [];
-    for (let ii = 0; ii < m.items.length; ii++){
-      const it = m.items[ii];
-      const at = label + ', item ' + (ii + 1);
-      if (!it || typeof it !== 'object' || Array.isArray(it)){ errors.push(at + ': not an item.'); return; }
-      const out = { id: foodUid('i'),
-        name: (typeof it.name === 'string' ? it.name.replace(/\s+/g, ' ').trim().slice(0, IMPORT_LIMITS.name) : '') || 'Item' };
-      const src = { kcal: it.kcal, proteinG: it.proteinG != null ? it.proteinG : it.protein,
-                    carbsG: it.carbsG != null ? it.carbsG : it.carbs, fatG: it.fatG != null ? it.fatG : it.fat, grams: it.grams };
-      for (const k of Object.keys(src)){
-        const v = src[k];
-        if (v == null || v === ''){ out[k] = 0; continue; }
-        const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
-        if (!isFinite(n) || n < 0 || n > IMPORT_LIMITS[k]){ errors.push(at + ': ' + FOOD_FIELDS[k] + ' must be a number from 0 to ' + IMPORT_LIMITS[k] + '.'); return; }
-        out[k] = foodRound1(n);
-      }
-      items.push(out);
-    }
+    const items = parseImportItems(m.items, label, errors);
+    if (!items) return;
     const existing = (food.savedMeals || []).find(s => (s.name || '').trim().toLowerCase() === key);
     meals.push({ name, category: cat.id, items, replacesId: existing ? existing.id : null });
   });
@@ -2652,6 +2666,196 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t && t.dataset && t.dataset.input === 'import-file') onImportFileChosen(t);
 });
+
+// ---- Claude inbox (v46) ----
+// Claude can't (and mustn't) hold the sync code, so it posts SUGGESTED meals to
+// a separate Supabase table, `food_inbox`, using an inbox key. Row-level
+// security scopes every insert/read/delete to the X-Inbox-Key header, and the
+// table holds nothing but suggestions: the key can't see or change the log.
+// The key lives in food.inbox.key, so it syncs to every device.
+//
+// The app only SHOWS suggestions. Nothing reaches the log until the user taps
+// Accept in the review sheet. Each row's id is recorded in food.inbox.done
+// before the row is deleted, so a failed delete (or another device) can never
+// apply the same suggestion twice.
+//
+// Payload: { "days": [ { "date": "2026-09-24", "meals": [ { "category": "Lunch",
+//   "name": "Chicken stir-fry", "time": "", "notes": "", "items": [ …same as import… ] } ] } ] }
+const INBOX_LIMITS = { days: 14, mealsPerDay: 20, note: 200, mealNotes: 300, time: 20, done: 200 };
+let inboxState = { rows: [], checkedAt: 0, busy: false };
+
+function inboxKey(){ return (food.inbox && typeof food.inbox.key === 'string') ? food.inbox.key : ''; }
+function newInboxKey(){
+  const b = new Uint8Array(24);
+  (crypto || window.crypto).getRandomValues(b);
+  return 'ib-' + Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function inboxReq(query, opts){
+  const o = opts || {};
+  return fetch(SB_URL + '/rest/v1/food_inbox' + (query || ''), Object.assign({}, o, {
+    headers: Object.assign({ apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'X-Inbox-Key': inboxKey() }, o.headers || {})
+  }));
+}
+function validDateStr(s){
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && toStr(fromStr(s)) === s;
+}
+// Validates one inbox payload → { days } or { errors }. Same item rules as import.
+function parseInboxPayload(payload){
+  const errors = [];
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.days) || !payload.days.length) return { errors: ['No days in this suggestion.'] };
+  if (payload.days.length > INBOX_LIMITS.days) return { errors: ['More than ' + INBOX_LIMITS.days + ' days.'] };
+  const days = [], seenDates = new Set();
+  payload.days.forEach((d, di) => {
+    const where = 'Day ' + (di + 1);
+    if (!d || typeof d !== 'object'){ errors.push(where + ': not a day.'); return; }
+    if (!validDateStr(d.date)){ errors.push(where + ': date must be YYYY-MM-DD.'); return; }
+    if (d.date > todayStr()){ errors.push(where + ' (' + d.date + '): that\'s in the future.'); return; }
+    if (seenDates.has(d.date)){ errors.push(where + ' (' + d.date + '): date appears twice.'); return; }
+    seenDates.add(d.date);
+    if (!Array.isArray(d.meals) || !d.meals.length){ errors.push(where + ': no meals.'); return; }
+    if (d.meals.length > INBOX_LIMITS.mealsPerDay){ errors.push(where + ': more than ' + INBOX_LIMITS.mealsPerDay + ' meals.'); return; }
+    const meals = [];
+    for (let mi = 0; mi < d.meals.length; mi++){
+      const m = d.meals[mi];
+      const at = d.date + ', meal ' + (mi + 1);
+      if (!m || typeof m !== 'object' || Array.isArray(m)){ errors.push(at + ': not a meal.'); return; }
+      const cat = resolveCategory(m.category);
+      if (cat.error){ errors.push(at + ': ' + cat.error + '.'); return; }
+      const name = (typeof m.name === 'string' ? m.name.replace(/\s+/g, ' ').trim().slice(0, IMPORT_LIMITS.name) : '') || (cat.id ? categoryLabel(cat.id) : '');
+      if (!name){ errors.push(at + ': needs a name or a category.'); return; }
+      if (!Array.isArray(m.items) || !m.items.length){ errors.push(at + ' ("' + name + '"): needs at least one item.'); return; }
+      if (m.items.length > IMPORT_LIMITS.items){ errors.push(at + ': more than ' + IMPORT_LIMITS.items + ' items.'); return; }
+      const items = parseImportItems(m.items, at + ' ("' + name + '")', errors);
+      if (!items) return;
+      const str = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '');
+      meals.push({ name, category: cat.id, time: str(m.time, INBOX_LIMITS.time), notes: str(m.notes, INBOX_LIMITS.mealNotes), items });
+    }
+    days.push({ date: d.date, meals });
+  });
+  return errors.length ? { errors } : { days };
+}
+// Fetches pending suggestions. Silent on any failure: the inbox is a
+// convenience and must never get in the way of the app.
+async function checkInbox(force){
+  if (!inboxKey() || inboxState.busy) return;
+  if (navigator.onLine === false) return;
+  if (!force && Date.now() - inboxState.checkedAt < 60000) return;
+  inboxState.busy = true;
+  try {
+    const r = await inboxReq('?select=id,payload,note,created_at&order=created_at.asc&limit=20');
+    if (!r.ok) return;
+    const rows = await r.json();
+    const done = new Set((food.inbox && food.inbox.done) || []);
+    const before = inboxState.rows.length;
+    inboxState.rows = (Array.isArray(rows) ? rows : [])
+      .filter(x => x && typeof x.id === 'string' && !done.has(x.id))
+      .map(x => Object.assign({ id: x.id, note: typeof x.note === 'string' ? x.note.slice(0, INBOX_LIMITS.note) : '',
+                                createdAt: x.created_at }, parseInboxPayload(x.payload)));
+    inboxState.checkedAt = Date.now();
+    if (inboxState.rows.length && inboxState.rows.length !== before) toast('📥 Suggestions from Claude — see the Food tab');
+    render();
+  } catch (e) {
+    // offline / paused / table missing: try again later
+  } finally { inboxState.busy = false; }
+}
+function renderInboxBanner(){
+  const n = inboxState.rows.length;
+  if (!n) return '';
+  const meals = inboxState.rows.reduce((a, r) => a + (r.days ? r.days.reduce((b, d) => b + d.meals.length, 0) : 0), 0);
+  return '<button class="food-inbox-banner" data-act="inbox-review">📥 ' + (meals ? meals + ' meal' + (meals === 1 ? '' : 's') : n + ' suggestion' + (n === 1 ? '' : 's'))
+    + ' from Claude — tap to review</button>';
+}
+function openInboxReview(){
+  const rows = inboxState.rows;
+  if (!rows.length){ toast('No suggestions waiting'); return; }
+  let h = '<h2>📥 From Claude</h2><div class="food-hint">Nothing is added to your log until you tap Accept.</div>';
+  rows.forEach(r => {
+    h += '<div class="food-inbox-card">';
+    if (r.note) h += '<div class="food-inbox-note">' + esc(r.note) + '</div>';
+    if (r.errors){
+      h += '<div class="food-ai-error">Can\'t use this suggestion:<ul class="food-import-list">'
+        + r.errors.slice(0, 6).map(e => '<li>' + esc(e) + '</li>').join('') + '</ul></div>';
+    } else {
+      r.days.forEach(d => {
+        const t = d.meals.reduce((a, m) => { const mm = mealMacros(m); return { k: a.k + mm.kcal, p: a.p + mm.proteinG }; }, { k: 0, p: 0 });
+        h += '<div class="food-cat-head"><span>' + esc(fmtLong(d.date)) + '</span><span>' + Math.round(t.k) + ' kcal · ' + Math.round(t.p) + 'g P</span></div>';
+        const existing = (food.mealsByDay && food.mealsByDay[d.date]) || [];
+        d.meals.forEach(m => {
+          const mm = mealMacros(m);
+          const dup = existing.some(x => (x.name || '').trim().toLowerCase() === m.name.toLowerCase() && mealCategory(x) === (m.category || mealCategory(m)));
+          h += '<div class="food-inbox-meal"><div><b>' + esc(m.category ? categoryLabel(m.category) : 'Other') + '</b> · ' + esc(m.name)
+            + (dup ? ' <span class="food-inbox-dup">already logged?</span>' : '') + '</div>'
+            + '<div class="food-chip-stats">' + esc(mealItemNames(m) || '') + '</div>'
+            + '<div class="food-chip-stats">' + Math.round(mm.kcal) + ' kcal · ' + Math.round(mm.proteinG) + 'g P · '
+            + Math.round(mm.carbsG) + 'g C · ' + Math.round(mm.fatG) + 'g F' + (m.notes ? ' · ' + esc(m.notes) : '') + '</div></div>';
+        });
+      });
+      h += '<button class="btn btn-primary" data-act="inbox-accept" data-id="' + esc(r.id) + '">Accept</button>';
+    }
+    h += '<button class="btn btn-secondary" data-act="inbox-reject" data-id="' + esc(r.id) + '">' + (r.errors ? 'Dismiss' : 'Reject') + '</button></div>';
+  });
+  h += '<button class="btn" data-act="inbox-close">Close</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function markInboxDone(id){
+  food.inbox = Object.assign({}, food.inbox);
+  const done = (food.inbox.done || []).filter(x => x !== id);
+  done.push(id);
+  food.inbox.done = done.slice(-INBOX_LIMITS.done);
+}
+// Best-effort cleanup after the id is safely recorded as done.
+function deleteInboxRow(id){
+  try { inboxReq('?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {}); } catch (e) {}
+}
+function inboxAccept(id){
+  const r = inboxState.rows.find(x => x.id === id);
+  if (!r || !r.days) return;
+  if (((food.inbox && food.inbox.done) || []).includes(id)){ inboxState.rows = inboxState.rows.filter(x => x.id !== id); render(); return; }
+  food.mealsByDay = food.mealsByDay || {};
+  let n = 0;
+  r.days.forEach(d => {
+    const arr = food.mealsByDay[d.date] = food.mealsByDay[d.date] || [];
+    d.meals.forEach(m => {
+      arr.push({ id: foodUid('m'), name: m.name, category: m.category, time: m.time, notes: m.notes,
+                 items: m.items.map(it => Object.assign({}, it, { id: foodUid('i') })), addedBy: 'claude-inbox' });
+      n++;
+    });
+  });
+  markInboxDone(id);
+  saveState();
+  inboxState.rows = inboxState.rows.filter(x => x.id !== id);
+  deleteInboxRow(id);
+  render();                              // the day view and banner behind the sheet are now stale
+  toast('Added ' + n + ' meal' + (n === 1 ? '' : 's'));
+  if (inboxState.rows.length) openInboxReview(); else closeModal();
+}
+function inboxReject(id){
+  if (!inboxState.rows.some(x => x.id === id)) return;
+  markInboxDone(id);
+  saveState();
+  inboxState.rows = inboxState.rows.filter(x => x.id !== id);
+  deleteInboxRow(id);
+  render();
+  toast('Suggestion removed');
+  if (inboxState.rows.length) openInboxReview(); else closeModal();
+}
+function setupInbox(){
+  food.inbox = Object.assign({}, food.inbox, { key: newInboxKey(), createdAt: todayStr() });
+  saveState();
+  openSyncModal();
+  checkInbox(true);
+}
+function turnOffInbox(){
+  if (!confirm('Turn off the Claude inbox?\n\nPending suggestions are deleted and the current inbox key stops working. Meals already accepted stay in your log.')) return;
+  if (inboxKey()){ try { inboxReq('?id=not.is.null', { method: 'DELETE' }).catch(() => {}); } catch (e) {} }
+  food.inbox = Object.assign({}, food.inbox);
+  delete food.inbox.key;
+  saveState();
+  inboxState.rows = [];
+  openSyncModal();
+  render();
+}
 
 function renderMealEditor(){
   const d = window._mealEditor;
@@ -3030,6 +3234,13 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'new-saved-meal': openSavedMealEditor(null); break;
+    case 'inbox-review': openInboxReview(); break;
+    case 'inbox-accept': inboxAccept(id); break;
+    case 'inbox-reject': inboxReject(id); break;
+    case 'inbox-close': closeModal(); break;
+    case 'inbox-setup': setupInbox(); break;
+    case 'inbox-off': turnOffInbox(); break;
+    case 'inbox-check': checkInbox(true).then(() => { if (!inboxState.rows.length) toast('No suggestions waiting'); }); break;
     case 'import-saved-meals': openImportSavedMeals(); break;
     case 'import-pick-file': importPickFile(); break;
     case 'import-check': importCheck(); break;
@@ -3164,7 +3375,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v45',
+    appVersion: 'v46',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
@@ -3658,6 +3869,18 @@ function openSyncModal(){
     h += '<button class="btn btn-secondary" onclick="closeModal(); syncNow(false)">Sync now</button>';
     h += '<button class="btn btn-danger" onclick="unlinkSync()">Unlink this device</button>';
   }
+  // Claude inbox. Works without Sync, but set it up after Sync so every device shares the key.
+  h += '<div class="food-inbox-setup"><div class="form-label">📥 Claude inbox</div>';
+  if (!inboxKey()){
+    h += '<div class="rule">Lets Claude <b>suggest</b> meals for you to review. The inbox key can only add suggestions — it can\'t see or change your log.</div>';
+    h += '<button class="btn btn-secondary" data-act="inbox-setup">Set up Claude inbox</button>';
+  } else {
+    h += '<div class="rule">Store this key on the computer where Claude runs (not in chat). It only lets Claude add suggestions for you to review.</div>';
+    h += '<input class="form-select" id="inbox-key-show" value="' + esc(inboxKey()) + '" readonly onclick="this.select()">';
+    h += '<button class="btn btn-secondary" data-act="inbox-check">Check for suggestions now</button>';
+    h += '<button class="btn btn-danger" data-act="inbox-off">Turn off Claude inbox</button>';
+  }
+  h += '</div>';
   h += '<button class="btn" onclick="closeModal()">Close</button>';
   document.getElementById('modal').innerHTML = h;
   document.getElementById('modal-overlay').classList.add('show');
@@ -3756,9 +3979,11 @@ if (syncKey()){
 // Going to the background flushes a pending push now instead of waiting out
 // the 3s debounce, which a locked phone may never finish.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') resumeSync();
+  if (document.visibilityState === 'visible'){ resumeSync(); checkInbox(); }
   else if (syncKey() && syncMeta().dirty){ clearTimeout(syncTimer); syncNow(true); }
 });
+// Claude inbox: look for suggestions on open (throttled to once a minute after that).
+checkInbox();
 
 if ('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg => {
