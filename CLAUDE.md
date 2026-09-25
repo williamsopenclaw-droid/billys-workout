@@ -14,6 +14,16 @@ The app is for Billy. Treat it as a real tool someone uses at a gym on a phone, 
 
 ---
 
+## September 24, 2026 update — v47: inbox cleanup retry
+
+First real use (Sep 24): William accepted Tue + Wed on his phone while it had no connection. The meals were safe locally and uploaded when he tapped Sync now, but the rows' deletes had been fire-and-forget, so they'd have lingered on the server. `checkInbox()` now retries the delete for any row it receives whose id is already in `food.inbox.done` — and **only** those (a mutation that deleted every returned row, i.e. unreviewed suggestions too, is caught by the tests). Those rows were never shown again either way; this is tidiness, not correctness.
+
+**Logging workflow as it actually ran:** William pastes the day's list in chat → Claude checks what's already on that date (a names/categories-only `execute_sql` read via the connector is fine) → writes the day JSON with real label/USDA numbers, every estimate spelled out in meal `notes` → `node tools/food-inbox.mjs post …` → he Accepts in the app → verify the server copy (`workout_state` meal counts/kcal per day) and `pending` is empty. If he says he accepted but the server doesn't show it, the accepting device is offline or unsynced: have him open ☁️ Sync → Sync now.
+
+**Don't confuse the two keys.** On 2026-09-24 William first put his **sync code** (`bw-…`) into `BILLYS_INBOX_KEY`. The script rejected it (inbox keys start `ib-`) and nothing was written with it. The sync code therefore appeared in chat; he chose to rotate it later. Never use a `bw-` code, even if it's handed over.
+
+---
+
 ## September 24, 2026 update — v46: Claude inbox (how Claude logs food for William)
 
 **This is the way to "add today's meals" when William asks.** Claude must not use or ask for the sync code. Instead Claude posts *suggestions* to the inbox; William reviews and accepts them in the app.
@@ -357,6 +367,9 @@ If the script block has a syntax error the whole file fails to parse and every g
 
 ## Open work / known gaps
 
+- **Rotate the sync code** — it appeared in chat on 2026-09-24 (see the v47 entry). William's call when. Rotation = new code on one device, re-link the others, then delete the old `workout_state` row (via the connector, with his OK) so the old code no longer opens a copy of his data.
+- **Supabase advisor:** `public.touch_updated_at` has a mutable `search_path` (pre-existing, low risk, one `alter function` to fix — his call).
+
 - ~~Auto-deploy is linked but unproven.~~ **Resolved 2026-08-06 — it works.** Pushing `32978a4` produced deploy `6a7540d4d128f70008f191ed` on its own: `commit_ref` matches the pushed commit, `branch: main`, `manual_deploy: false`, `committer: williamsopenclaw-droid`, published 4s after build. No further action.
   **Caveat for whoever checks this next:** `deploy_source` still reads `"api"` even on a genuine push-triggered deploy, so it is *not* a reliable signal and the earlier reading of it was a false alarm. Judge by `commit_ref` matching HEAD, `manual_deploy: false`, and `committer` instead.
 - ~~`manifest.json` description is stale.~~ Fixed 2026-08-06 — now "Upper/Lower/Arms workout tracker. Works offline."
@@ -383,7 +396,7 @@ The sandbox can't reach GitHub or the npm registry (both 403 through the proxy),
 
 ## Recent changes
 
-**Docs current through the v46 Claude-inbox commit (2026-09-24).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v46 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
+**Docs current through the v47 inbox-cleanup commit (2026-09-24).** Before writing new entries, run `git log --oneline -5` and compare against the dated update sections at the top — anything newer than the v47 commit is undocumented. Bump this hash in the same commit that writes the entry. The v35–v37 notes live in the dated update sections at the top of this file, not below.
 
 - **2026-08-08 — build a custom workout from scratch (`sw.js` → v34, app label → v34).**
 

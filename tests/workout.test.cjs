@@ -556,8 +556,12 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   ok(JSON.parse(ib.memory.get('caprica_workout_v2')).food.inbox.done.includes('r1'));
   const ibDel=ib.run("window.__calls.find(c=>c.method==='DELETE')"); ok(ibDel.u.endsWith('food_inbox?id=eq.r1')); eq(ibDel.h['X-Inbox-Key'],IBK);
   ib.run("inboxAccept('r1')"); eq(ib.run("food.mealsByDay['2026-09-24'].length"),2);  // never twice
-  // If the delete failed and the server still returns r1, it stays hidden.
+  // If the delete failed and the server still returns r1, it stays hidden — and the delete is retried.
+  ib.run("window.__calls=[]");
   await ib.run("checkInbox(true)"); ok(!ib.run("inboxState.rows.map(r=>r.id)").includes('r1'));
+  const retried=ib.run("window.__calls.filter(c=>c.method==='DELETE').map(c=>c.u.split('food_inbox')[1])");
+  eq(JSON.parse(JSON.stringify(retried)),['?id=eq.r1']);                              // only the already-handled row, nothing pending
+  eq(ib.run("window.__calls.find(c=>c.method==='DELETE').h['X-Inbox-Key']"),IBK);
   // An unusable suggestion can't be accepted, even by calling Accept directly.
   ib.run("inboxAccept('r2')"); eq(ib.run("food.mealsByDay['2026-12-01']"),undefined); ok(ib.run("inboxState.rows.map(r=>r.id)").includes('r2'));
   // Accepted on another device (its done list arrived by sync) while still listed here: not added again.

@@ -1362,7 +1362,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v46 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">v47 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
@@ -2747,6 +2747,10 @@ async function checkInbox(force){
     const rows = await r.json();
     const done = new Set((food.inbox && food.inbox.done) || []);
     const before = inboxState.rows.length;
+    // Rows already accepted/rejected whose delete never got through (e.g. the
+    // device was offline at the time): retry the cleanup now. They were never
+    // shown again either way — this just stops them lingering on the server.
+    (Array.isArray(rows) ? rows : []).forEach(x => { if (x && typeof x.id === 'string' && done.has(x.id)) deleteInboxRow(x.id); });
     inboxState.rows = (Array.isArray(rows) ? rows : [])
       .filter(x => x && typeof x.id === 'string' && !done.has(x.id))
       .map(x => Object.assign({ id: x.id, note: typeof x.note === 'string' ? x.note.slice(0, INBOX_LIMITS.note) : '',
@@ -3375,7 +3379,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v46',
+    appVersion: 'v47',
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
