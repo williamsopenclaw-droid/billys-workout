@@ -35,11 +35,11 @@ When William pastes a day's list and asks for it to be added:
 2. **Write the day as JSON** (format at the top of `tools/food-inbox.mjs`). Real label or USDA numbers only — **never invent values.** Look labels up online when needed; say where a number came from, and spell out every estimate in the meal's `notes`. Put mL amounts in item names (`grams` is grams). William decides what's estimated vs. left blank; ask when it matters.
 3. `node tools/food-inbox.mjs post day.json --note "Tue Sep 22 - …"`, then `pending` to confirm.
 4. Tell him it's waiting (Food tab banner "📥 N meals from Claude"). **Nothing reaches his log until he taps Accept.**
-5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. **Pick his row carefully:** there have been test rows in `workout_state` (a `bw-TES…` row from 2026-08-08 and a `bw-000…` junk row from 2026-09-25 — see Open work), so don't select "the row with an inbox key"; exclude test keys (`sync_key not like 'bw-TES%' and sync_key <> 'bw-' || repeat('0',48)`) or check the latest `device_note` matches his phone. If the server doesn't have it, the accepting device was offline: have him open ⚙️ Admin → Sync now, then re-check.
+5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. **Pick his row carefully:** since 2026-09-25 his is the only row in `workout_state` (two test rows were deleted with his OK, migration `delete_test_sync_rows`), but don't assume that stays true — check the row count, and that `device_note` matches his phone, before reading "his" data. If the server doesn't have it, the accepting device was offline: have him open ⚙️ Admin → Sync now, then re-check.
 
 **Two keys — never mix them up.** The **sync code** (`bw-…`, localStorage `caprica_workout_sync_key`) opens his whole history: never ask for it, never use it, even if it's handed over. The **inbox key** (`ib-…`, `food.inbox.key`, and `BILLYS_INBOX_KEY` on this PC) can only add/read/remove *suggestions* in `food_inbox`. The script reads the key from the environment or the Windows registry; never print it, put it in a URL, or echo it. `node tools/food-inbox.mjs selftest` checks the table's row security with throwaway keys.
 
-**Supabase changes** can go through the MCP connector (it can see this project), but **only with William's explicit go-ahead each time** — it's his live data. Inspect first (`list_tables`, `pg_policies`), apply with `apply_migration`, then run the advisors and the selftest. Keep the SQL in `supabase/`.
+**Supabase changes** can go through the MCP connector (it can see this project), but **only with William's explicit go-ahead each time** — it's his live data. Inspect first (`list_tables`, `pg_policies`), apply with `apply_migration`, then run the advisors and the selftest. Keep the SQL in `supabase/`. The connector's `execute_sql` is **read-only**; writes (even a one-off `delete`) have to go through `apply_migration`, which also leaves a named record — preview the affected rows with a `select` first.
 
 ### Data rules
 
@@ -282,7 +282,6 @@ If the script block has a syntax error the whole file fails to parse and every g
 ## Open work / known gaps
 
 - **Rotate the sync code** — it appeared in chat on 2026-09-24 (CHANGELOG, v47). William's call when. Rotation = new code on one device, re-link the others, then delete the old `workout_state` row (via the connector, with his OK) so the old code no longer opens a copy of his data.
-- **Test rows in `workout_state`:** `bw-000…` (junk, created 2026-09-25 by a browser test — see FAILURE-MODES §9) and `bw-TES…` (from the 2026-08-08 sync verification). Neither is William's data. Delete them only with his OK.
 - **Supabase advisor:** `public.touch_updated_at` has a mutable `search_path` (pre-existing, low risk, one `alter function` to fix — his call).
 - **Photo estimates are unproven end to end.** The live function rejects unauthenticated calls correctly, but a real photo has only been analysed if William has tried one; whether Netlify AI Gateway supplies the env vars is unverified.
 - **Light-dumbbell rounding** — see Rule #6 (legacy/Travel progression only).
