@@ -19,8 +19,16 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 - **Saved** — one-tap meals you have regularly. ✎ edits one; **+ New saved meal** builds one; **⤓ Import** takes a list Claude prepares.
 - **Recipes** — meal-prep batches. **Log amount…** logs part of a portion or a weight (weigh the whole cooked batch once and enter it under Edit).
 
+### Logging a meal
+Food → **+ Log Meal**:
+- **Meal type** is a dropdown (Breakfast … Evening Snack). **＋ Add another…** at the bottom adds your own, like "Pre-bed snack"; it appears on all your devices.
+- **Time** fills in by itself when you log for today. You can change it.
+- **🔎 Search food…** is the main way to add food (below). Under it: **✏️ Add manually** to type an item in yourself, and **📷 Photo** to estimate from a picture.
+- Each food shows as a card with its calories and macros. **Tap a card to change its numbers.** The bar at the top shows what the whole meal adds up to.
+- A name and notes are optional — they're under **More details**.
+
 ### Searching for a food
-In any meal, tap **🔎 Search food** and start typing:
+In any meal, tap **🔎 Search food…** and start typing:
 - **Your foods** — anything you've logged before, with your own numbers (works offline).
 - **Canadian Nutrient File** — Health Canada's plain foods (fruit, vegetables, meat, grains, dairy), with Canadian serving sizes like "1 medium banana" or "250 mL".
 - **Packaged foods** — brands sold in Canada, from Open Food Facts. Anyone can add to it, so a ⚠️ means the numbers don't add up — check the package.

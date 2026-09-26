@@ -368,6 +368,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-ai-notes{margin:0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.4}
 .food-ai-error{font-size:12px;color:var(--red);line-height:1.4}
 .food-ai-tag{grid-column:1/-1;font-size:11px;color:var(--accent);line-height:1.3}
+/* v50: search-first meal editor */
+.meal-top{display:flex;gap:8px;margin-bottom:10px}
+.meal-top .meal-cat-select{flex:1 1 auto;min-width:0}
+.meal-top .meal-time{flex:0 0 108px;text-align:center}
+.meal-name-top{margin-bottom:10px}
+.meal-total{font-size:13px;color:var(--text);background:var(--card);border-radius:10px;padding:10px 12px;margin-bottom:10px;line-height:1.4}
+.meal-total:empty{display:none}
+.meal-search-bar{display:block;width:100%;text-align:left;font-family:inherit;font-size:15px;color:var(--muted);background:var(--card);border:2px solid var(--accent);border-radius:12px;padding:13px 14px;cursor:pointer;margin-bottom:8px}
+.meal-search-bar:active{background:var(--surface)}
+.meal-add-row{display:flex;gap:8px;margin-bottom:12px}
+.meal-add-row .btn{flex:1;margin:0;padding:9px;font-size:13px}
+.meal-items{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.meal-item-card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 40px 10px 12px;cursor:pointer}
+.meal-item-card.editing{cursor:default;padding:12px;border-color:var(--accent)}
+.mic-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.mic-name{font-size:14px;font-weight:600;line-height:1.3}
+.mic-kcal{font-size:13px;font-weight:700;white-space:nowrap}
+.mic-sub{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35}
+.mic-src{color:var(--accent)}
+.mic-del{position:absolute;top:6px;right:6px;border:none;background:transparent;color:var(--muted);font-size:16px;padding:6px 8px;cursor:pointer}
+.mic-del:active{color:var(--red)}
+.mic-field{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
+.mic-field .form-input{margin:0}
+.mic-wide{margin-bottom:8px}
+.mic-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.meal-more{display:block;width:100%;text-align:left;font-family:inherit;font-size:13px;color:var(--accent);background:none;border:none;padding:6px 2px 12px;cursor:pointer}
+.meal-more-sum{color:var(--muted)}
 /* v49: food search */
 .fs-results{margin:10px 0}
 .fs-group{margin-bottom:12px}
@@ -805,7 +832,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -2087,11 +2114,33 @@ const OTHER_CATEGORY = { id: 'other', label: 'Other' };
 function catNorm(s){ return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
 const CATEGORY_ALIASES = { afterwork: 'post-workout', workout: 'post-workout', postworkout: 'post-workout',
                            morningsnack: 'am-snack', afternoonsnack: 'pm-snack', eveningsnack: 'evening-snack' };
-function categoryById(id){ return MEAL_CATEGORIES.find(c => c.id === id) || null; }
+// Custom meal types (v50): food.customCategories = [{ id: 'c-…', label }], added
+// from the meal-type dropdown. Synced with the rest of food; older builds keep
+// the field (unknown food keys survive) and file such meals by name or Other.
+// Built-ins stay first; custom types follow in the order they were added.
+function customCategories(){
+  return (Array.isArray(food.customCategories) ? food.customCategories : [])
+    .filter(c => c && typeof c.id === 'string' && /^c-[a-z0-9-]{3,60}$/.test(c.id) && typeof c.label === 'string' && c.label.trim())
+    .map(c => ({ id: c.id, label: c.label.replace(/\s+/g, ' ').trim().slice(0, 30) }));
+}
+function allCategories(){ return MEAL_CATEGORIES.concat(customCategories()); }
+// Returns the id to use: an existing type with the same label (built-in or
+// custom) is reused rather than duplicated. '' for an empty/cancelled name.
+function addCustomCategory(label){
+  const clean = String(label || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+  if (!clean || !catNorm(clean)) return '';
+  const existing = allCategories().find(c => catNorm(c.label) === catNorm(clean));
+  if (existing) return existing.id;
+  const id = foodUid('c');
+  food.customCategories = (Array.isArray(food.customCategories) ? food.customCategories : []).concat([{ id, label: clean }]);
+  saveState();
+  return id;
+}
+function categoryById(id){ return allCategories().find(c => c.id === id) || null; }
 function mealCategory(meal){
   if (meal && categoryById(meal.category)) return meal.category;
   const n = catNorm(meal && meal.name);
-  const byLabel = MEAL_CATEGORIES.find(c => catNorm(c.label) === n);
+  const byLabel = allCategories().find(c => catNorm(c.label) === n);
   return byLabel ? byLabel.id : (CATEGORY_ALIASES[n] || OTHER_CATEGORY.id);
 }
 function categoryLabel(id){ return (categoryById(id) || OTHER_CATEGORY).label; }
@@ -2105,7 +2154,7 @@ function categoryForNow(){
 // (a guess about yesterday would just be wrong more often than not).
 function defaultCategory(ds){ return ds === todayStr() ? categoryForNow() : ''; }
 function groupMealsByCategory(meals){
-  const order = MEAL_CATEGORIES.concat([OTHER_CATEGORY]);
+  const order = allCategories().concat([OTHER_CATEGORY]);
   return order.map(c => ({ id: c.id, label: c.label, meals: meals.filter(m => mealCategory(m) === c.id) }))
               .filter(g => g.meals.length);
 }
@@ -2529,9 +2578,17 @@ function openMealEditor(ds, id){
     ? { ds: ds, id: existing.id, name: existing.name || '', time: existing.time || '',
         category: categoryById(cat) ? cat : '',
         notes: existing.notes || '', items: (existing.items || []).map(it => Object.assign({}, it)) }
-    : { ds: ds, id: null, name: '', time: '', category: cat, notes: '', items: [blankItem()] };
+    // A new meal for today gets the current time; a past day stays blank ("now" would be wrong).
+    // No starter row: search (or ✏️ Add manually) adds the rows.
+    : { ds: ds, id: null, name: '', time: ds === todayStr() ? nowTimeLabel() : '', category: cat, notes: '', items: [] };
   renderMealEditor();
   document.getElementById('modal-overlay').classList.add('show');
+}
+// "6:42 PM" — built by hand so it's the same on every device and locale.
+function nowTimeLabel(when){
+  const d = when || new Date();
+  const h = d.getHours(), m = d.getMinutes();
+  return ((h % 12) || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM');
 }
 function numIn(key, val, i){
   const tail = key.split('-').pop();
@@ -2565,7 +2622,6 @@ function openSavedMealEditor(id){
   window._mealEditor = { kind: 'saved', savedId: id || null, ds: foodDay(), name: s.name || '',
     category: categoryById(s.category) ? s.category : '', time: '', notes: '',
     items: (s.items || []).map(it => Object.assign({}, it)) };
-  if (!window._mealEditor.items.length) window._mealEditor.items = [blankItem()];
   renderMealEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -2595,7 +2651,7 @@ function resolveCategory(v){
   if (v == null || v === '') return { id: '' };
   if (categoryById(v)) return { id: v };
   const n = catNorm(v);
-  const byLabel = MEAL_CATEGORIES.find(c => catNorm(c.label) === n);
+  const byLabel = allCategories().find(c => catNorm(c.label) === n);
   if (byLabel) return { id: byLabel.id };
   if (CATEGORY_ALIASES[n]) return { id: CATEGORY_ALIASES[n] };
   return { error: 'unknown category "' + String(v).slice(0, 40) + '"' };
@@ -2957,40 +3013,97 @@ function renderMealEditor(){
     if (!d.search.pick){ const q = document.querySelector('#modal [data-input="fs-q"]'); if (q && q.focus) q.focus(); }
     return;
   }
+  // Search-first layout (v50): meal type + time on one line, a running total,
+  // a big search bar with ✏️ Add manually / 📷 Photo under it, items as cards
+  // (tap one to edit), and name/notes folded under "More details".
   const saved = d.kind === 'saved';
   let h = saved ? (d.savedId ? '<h2>Edit saved meal</h2><div class="food-hint">Changes apply the next time you log it. Meals already logged stay as they are.</div>'
                              : '<h2>New saved meal</h2><div class="food-hint">A one-tap shortcut. Saving it doesn\'t log anything.</div>')
                 : '<h2>' + (d.id ? 'Edit meal' : 'Log meal') + ' · ' + esc(fmtShort(d.ds)) + '</h2>';
-  h += '<div class="form-group"><label class="form-label">Meal</label><div class="food-cat-chips">';
-  MEAL_CATEGORIES.forEach(c => {
-    h += '<button class="food-cat-chip' + (d.category === c.id ? ' active' : '') + '" data-act="meal-cat" data-cat="' + c.id + '">' + esc(c.label) + '</button>';
-  });
-  h += '</div></div>';
-  if (!saved) h += renderAiBox(d);
-  h += '<div class="form-group"><label class="form-label">Name' + (saved ? '' : ' (optional)') + '</label>'
-    + '<input class="form-input" data-input="meal-name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'e.g. Chicken stir-fry') + '" value="' + esc(d.name) + '"></div>';
-  if (!saved) h += '<div class="form-group"><label class="form-label">Time (optional)</label>'
-    + '<input class="form-input" data-input="meal-time" placeholder="e.g. 12:30 PM" value="' + esc(d.time) + '"></div>';
-  h += '<div class="form-group"><label class="form-label">Items</label><div class="food-editor-items">';
-  (d.items || []).forEach((it, i) => { h += renderEditableRow(it, i, 'meal'); });
-  h += '</div><div class="admin-actions"><button class="btn btn-secondary" data-act="fs-open">🔎 Search food</button>'
-    + '<button class="btn btn-secondary" data-act="meal-add-item">+ Add item</button></div></div>';
-  if (!saved) h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
-    + '<input class="form-input" data-input="meal-notes" placeholder="Supplements, water, etc." value="' + esc(d.notes) + '"></div>';
+  h += '<div class="meal-top"><select class="form-input meal-cat-select" data-input="meal-cat-select" aria-label="Meal type">'
+    + '<option value="">' + (saved ? '— No meal type —' : '— Choose meal —') + '</option>'
+    + allCategories().map(c => '<option value="' + esc(c.id) + '"' + (d.category === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('')
+    + '<option value="__add__">＋ Add another…</option></select>'
+    + (saved ? '' : '<input class="form-input meal-time" data-input="meal-time" aria-label="Time" placeholder="Time" value="' + esc(d.time) + '">')
+    + '</div>';
+  if (saved) h += '<input class="form-input meal-name-top" data-input="meal-name" aria-label="Name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'Name, e.g. Post-workout shake') + '" value="' + esc(d.name) + '">';
+  h += '<div class="meal-total" id="meal-total">' + mealTotalHtml(d) + '</div>';
+  h += '<button class="meal-search-bar" data-act="fs-open">🔎 Search food…</button>';
+  h += '<div class="meal-add-row"><button class="btn btn-secondary" data-act="meal-add-item">✏️ Add manually</button>'
+    + (saved ? '' : '<button class="btn btn-secondary" data-act="meal-photo-open">📷 Photo</button>') + '</div>';
+  if (!saved && (d.aiOpen || d.ai)) h += renderAiBox(d);
+  const items = d.items || [];
+  h += '<div class="meal-items">' + (items.length ? items.map((it, i) => mealItemCard(it, i, d.editing === i)).join('')
+                                                : '<div class="fs-empty">Search for a food to add it, or add one manually.</div>') + '</div>';
+  if (!saved){
+    const bits = [d.name && d.name.trim() ? esc(d.name.trim()) : '', d.notes && d.notes.trim() ? 'notes' : ''].filter(Boolean);
+    h += '<button class="meal-more" data-act="meal-more">' + (d.showMore ? '▾' : '▸') + ' More details'
+      + (!d.showMore && bits.length ? ' <span class="meal-more-sum">(' + bits.join(' · ') + ')</span>' : '') + '</button>';
+    if (d.showMore){
+      h += '<div class="form-group"><label class="form-label">Name (optional)</label>'
+        + '<input class="form-input" data-input="meal-name" placeholder="' + esc(d.category ? categoryLabel(d.category) : 'e.g. Chicken stir-fry') + '" value="' + esc(d.name) + '"></div>';
+      h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
+        + '<input class="form-input" data-input="meal-notes" placeholder="Supplements, water, etc." value="' + esc(d.notes) + '"></div>';
+    }
+  }
   h += '<button class="btn btn-primary" data-act="meal-save">Save</button>';
   h += '<button class="btn btn-secondary" data-act="meal-cancel">Cancel</button>';
   document.getElementById('modal').innerHTML = h;
+  if (d.focusItem != null){
+    const f = document.querySelector('#modal [data-input="item-name"][data-index="' + d.focusItem + '"]');
+    if (f && f.focus) f.focus();
+    d.focusItem = null;
+  }
+}
+function mealTotalHtml(d){
+  const items = (d.items || []).filter(it => !isBlankItem(it));
+  if (!items.length) return '';
+  const t = mealMacros({ items });
+  return '<b>This meal: ' + Math.round(t.kcal) + ' kcal</b> · ' + foodRound1(t.proteinG) + 'g P · ' + foodRound1(t.carbsG) + 'g C · ' + foodRound1(t.fatG) + 'g F';
+}
+const ITEM_SOURCE_LABEL = { cnf: 'Health Canada', off: 'Open Food Facts', mine: 'Your foods' };
+function mealItemCard(it, i, editing){
+  if (editing){
+    const field = (k, label) => '<label class="mic-field"><span>' + label + '</span><input class="form-input" type="number" inputmode="decimal" step="any" data-input="item-' + k
+      + '" data-index="' + i + '" placeholder="0" value="' + esc((it[k] === 0 || it[k] === '' || it[k] == null) ? '' : it[k]) + '"></label>';
+    return '<div class="meal-item-card editing">'
+      + '<label class="mic-field mic-wide"><span>Name</span><input class="form-input" data-input="item-name" data-index="' + i + '" placeholder="e.g. Apple" value="' + esc(it.name || '') + '"></label>'
+      + '<div class="mic-grid">' + field('kcal', 'Calories') + field('proteinG', 'Protein (g)') + field('carbsG', 'Carbs (g)') + field('fatG', 'Fat (g)') + field('grams', 'Weight (g)') + '</div>'
+      + (it.source === 'ai' ? '<div class="food-ai-tag">AI estimate · ' + esc(it.confidence || 'low') + ' confidence' + (it.notes ? ' · ' + esc(it.notes) : '') + '</div>' : '')
+      + '<div class="admin-actions"><button class="btn btn-primary" data-act="item-done">Done</button>'
+      + '<button class="btn btn-secondary" data-act="meal-remove-item" data-index="' + i + '">Remove</button></div></div>';
+  }
+  const n = k => foodRound1(foodNum(it[k]));
+  const src = it.source === 'ai' ? 'AI estimate · ' + (it.confidence || 'low') : ITEM_SOURCE_LABEL[it.source];
+  return '<div class="meal-item-card" data-act="item-edit" data-index="' + i + '">'
+    + '<div class="mic-top"><span class="mic-name">' + esc((it.name || '').trim() || 'Unnamed item') + '</span><span class="mic-kcal">' + Math.round(foodNum(it.kcal)) + ' kcal</span></div>'
+    + '<div class="mic-sub">' + (n('grams') ? n('grams') + ' g · ' : '') + n('proteinG') + 'g P · ' + n('carbsG') + 'g C · ' + n('fatG') + 'g F'
+    + (src ? ' · <span class="mic-src">' + esc(src) + '</span>' : '') + '</div>'
+    + '<button class="mic-del" data-act="meal-remove-item" data-index="' + i + '" aria-label="Remove item">✕</button></div>';
 }
 function mealAddItem(){
-  if (!window._mealEditor) return;
-  window._mealEditor.items = (window._mealEditor.items || []).concat([blankItem()]);
+  const d = window._mealEditor;
+  if (!d) return;
+  d.items = (d.items || []).concat([blankItem()]);
+  d.editing = d.focusItem = d.items.length - 1;        // open the new card, cursor in Name
   renderMealEditor();
 }
 function mealRemoveItem(i){
   const d = window._mealEditor;
   if (!d) return;
   d.items = (d.items || []).filter((_, j) => j !== i);
-  if (!d.items.length) d.items = [blankItem()];
+  if (d.editing === i) d.editing = null; else if (d.editing > i) d.editing--;
+  renderMealEditor();
+}
+function mealSetCategory(value){
+  const d = window._mealEditor;
+  if (!d) return;
+  if (value === '__add__'){
+    const id = addCustomCategory(prompt('Name the new meal type\n\ne.g. Pre-bed snack, Second breakfast') || '');
+    if (id) d.category = id;
+  } else {
+    d.category = categoryById(value) ? value : '';
+  }
   renderMealEditor();
 }
 function mealCancel(){ window._mealEditor = null; closeModal(); }
@@ -3003,7 +3116,13 @@ function mealSaveDraft(){
   const name = (d.name || '').trim() || (category ? categoryLabel(category) : '');
   if (!name){ toast('Pick a meal (Breakfast, Lunch…) or give it a name'); return; }
   const bad = foodRowsError(d.items || [], 'Item');
-  if (bad){ toast('⚠️ ' + bad); return; }
+  if (bad){
+    // Open the card with the problem so it's visible (cards are collapsed otherwise).
+    const idx = (d.items || []).findIndex((it, i) => foodRowError(it, 'x'));
+    if (idx >= 0){ d.editing = idx; renderMealEditor(); }
+    toast('⚠️ ' + bad);
+    return;
+  }
   // Normalise the known fields but keep any others on the item (AI markers,
   // or fields a newer build added) — rebuilding from a fixed list dropped them.
   const items = (d.items || []).map(it => Object.assign({}, it, {
@@ -3611,6 +3730,10 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'new-saved-meal': openSavedMealEditor(null); break;
+    case 'item-edit': if (window._mealEditor){ window._mealEditor.editing = +el.dataset.index; renderMealEditor(); } break;
+    case 'item-done': if (window._mealEditor){ window._mealEditor.editing = null; renderMealEditor(); } break;
+    case 'meal-more': if (window._mealEditor){ window._mealEditor.showMore = !window._mealEditor.showMore; renderMealEditor(); } break;
+    case 'meal-photo-open': if (window._mealEditor){ window._mealEditor.aiOpen = !window._mealEditor.aiOpen; renderMealEditor(); } break;
     case 'fs-open': openFoodSearch(); break;
     case 'fs-close': if (window._mealEditor){ window._mealEditor.search = null; renderMealEditor(); } break;
     case 'fs-pick': if (window._mealEditor && window._mealEditor.search) fsPick(window._mealEditor, el.dataset.src, +el.dataset.i); break;
@@ -3684,7 +3807,11 @@ function handleFoodInput(e){
   else if (k.indexOf('item-') === 0){
     const it = window._mealEditor && window._mealEditor.items && window._mealEditor.items[idx];
     if (it) it[k.slice(5)] = t.value;
+    // Keep the running total live without re-rendering (which would drop focus).
+    const tb = document.getElementById('meal-total');
+    if (tb && window._mealEditor) tb.innerHTML = mealTotalHtml(window._mealEditor);
   }
+  else if (k === 'meal-cat-select'){ mealSetCategory(t.value); }
   else if (k === 'goal-kcal' || k === 'goal-proteinG'){ if (window._goalsEditor) window._goalsEditor[k.slice(5)] = t.value; }
   else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
   else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }

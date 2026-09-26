@@ -6,6 +6,14 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-09-25 — v50: search-first meal editor, custom meal types
+
+William's design, from his notes and the layout he picked: the meal type is a **dropdown** with "＋ Add another…" for his own types (`food.customCategories`, synced; listed after the built-ins everywhere — Day view, History, import, inbox); the **time fills in** for a new meal today (blank on a past day); **search is the main action** (a big search bar, with ✏️ Add manually and 📷 Photo under it); items are **cards** with calories and macros (tap to edit, with labelled fields — previously five tiny unlabelled boxes); a **running total** updates as you type; name and notes fold under **More details**; the photo box only appears after tapping Photo. No empty starter row. A save blocked by a bad number opens the card with the problem. Fits on one phone screen with three items.
+
+Testing notes: while re-running every older mutation script from a verified baseline, found that five of them had been passing for the wrong reason since v48 (their scratch copies lacked `sw.js`, so every run failed on the missing file). All scripts now copy `git ls-files` and refuse to run on a failing baseline; with that, every mutation is caught except the one known-equivalent photo guard. Two new real test gaps closed: an empty manual row must be replaced by a search or photo result. Tests: 718 assertions; 23 editor mutations caught.
+
+---
+
 ## 2026-09-25 — v49: food search, and local test copies can't sync
 
 **Food search.** William used to log food in Samsung Health and wanted its search. 🔎 **Search food** in the meal (and saved-meal) editor searches, in order: **your foods** (every item you've logged, saved, or used as a recipe ingredient with grams — offline, with your own numbers; recent ones show before you type), Health Canada's **Canadian Nutrient File** (5,690 plain foods with Canadian metric serving sizes; no key; the name list is cached per device and searched on the phone; nutrients fetched on pick), and **Open Food Facts, Canada** for packaged brands (through a new relay, `/api/food-search`, because its search blocks browser calls and parses query syntax). He asked for the Canadian source over USDA; CNF needs no key, so there was nothing for him to set up.

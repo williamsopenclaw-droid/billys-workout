@@ -243,7 +243,7 @@ const click2=(act,data={})=>g2.run("(()=>{const e={dataset:"+JSON.stringify({act
 eq(g2.run("categoryForNow()"),'breakfast');
 g2.run("openMealEditor('2026-09-23',null)"); eq(g2.run("window._mealEditor.category"),'breakfast');
 g2.run("openMealEditor('2026-09-22',null)"); eq(g2.run("window._mealEditor.category"),'');
-ok(g2.el('modal').innerHTML.includes('data-cat="post-workout"'));
+ok(g2.el('modal').innerHTML.includes('<option value="post-workout">'));   // meal types are a dropdown since v50
 // Chips select, and a second tap clears.
 click2('meal-cat',{cat:'lunch'}); eq(g2.run("window._mealEditor.category"),'lunch');
 click2('meal-cat',{cat:'lunch'}); eq(g2.run("window._mealEditor.category"),'');
@@ -383,7 +383,7 @@ clickS('log-saved-meal',{id:SM});
 // The editor opens in saved mode: chips, name and items, but no date, time, notes or photo.
 clickS('edit-saved-meal',{id:SM});
 const smHtml=sm.el('modal').innerHTML;
-ok(smHtml.includes('Edit saved meal')); ok(smHtml.includes('data-cat="post-workout"'));
+ok(smHtml.includes('Edit saved meal')); ok(smHtml.includes('<option value="post-workout" selected>'));
 ok(!smHtml.includes('data-input="meal-time"')); ok(!smHtml.includes('data-input="meal-notes"')); ok(!smHtml.includes('meal-photo'));
 eq(sm.run("[window._mealEditor.kind,window._mealEditor.name,window._mealEditor.category,window._mealEditor.items.map(i=>i.name)]"),['saved','Shake','post-workout',['Whey']]);
 // Bad numbers and an empty item list are refused; nothing changes.
@@ -421,7 +421,7 @@ ok(sm.run("renderFoodSaved()").includes('data-act=\"new-saved-meal\"'));
 const loggedBefore=sm.run("JSON.stringify(food.mealsByDay)");
 clickS('new-saved-meal');
 ok(sm.el('modal').innerHTML.includes('New saved meal')); ok(!sm.el('modal').innerHTML.includes('data-input="meal-time"'));
-eq(sm.run("[window._mealEditor.kind,window._mealEditor.savedId,window._mealEditor.category,window._mealEditor.items.length]"),['saved',null,'',1]);
+eq(sm.run("[window._mealEditor.kind,window._mealEditor.savedId,window._mealEditor.category,window._mealEditor.items.length]"),['saved',null,'',0]);   // no starter row since v50
 sm.run("mealSaveDraft()"); ok(sm.el('toast').textContent.includes('Pick a meal'));      // no name, no category
 sm.run("window._mealEditor.name='Empty';mealSaveDraft()"); ok(sm.el('toast').textContent.includes('at least one item'));
 sm.run("window._mealEditor.items=[{name:'Greek yogurt',kcal:'-3'}];mealSaveDraft()"); eq(sm.run("food.savedMeals.length"),1);
@@ -579,6 +579,82 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   eq(JSON.parse(JSON.stringify(ad.run("window.__hit"))),['sync','settings','backup','restore','csv']);
 }
 
+// --- Search-first meal editor (v50) ---
+{
+  const me=app('2026-09-25');
+  const clickM=(act,data={})=>me.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+  const typeM=(input,v,i)=>me.run("handleFoodInput({target:{dataset:{input:"+JSON.stringify(input)+(i!=null?",index:'"+i+"'":"")+"},value:"+JSON.stringify(v)+"}})");
+  const modal=()=>me.el('modal').innerHTML;
+  // Time fills in for today (test clock: 8:00 AM); a past day stays blank; an existing meal keeps its time.
+  me.run("openMealEditor('2026-09-25',null)"); eq(me.run("window._mealEditor.time"),'8:00 AM'); ok(modal().includes('value="8:00 AM"'));
+  eq(me.run("nowTimeLabel()"),'8:00 AM');
+  eq(me.run("[nowTimeLabel(new Date(2026,8,25,18,42)),nowTimeLabel(new Date(2026,8,25,0,5)),nowTimeLabel(new Date(2026,8,25,12,0))]"),['6:42 PM','12:05 AM','12:00 PM']);
+  me.run("openMealEditor('2026-09-24',null)"); eq(me.run("window._mealEditor.time"),'');
+  me.run("addMealToDay('2026-09-24',{id:'t1',name:'Lunch',category:'lunch',time:'12:15 PM',items:[{name:'Soup',kcal:150}]});openMealEditor('2026-09-24','t1')");
+  eq(me.run("window._mealEditor.time"),'12:15 PM');
+  // Layout: search bar first, then Add manually / Photo; no starter row; name/notes folded away.
+  me.run("openMealEditor('2026-09-25',null)");
+  const h=modal();
+  ok(h.indexOf('data-act="fs-open"')<h.indexOf('data-act="meal-add-item"')); ok(h.includes('✏️ Add manually')); ok(h.includes('data-act="meal-photo-open"'));
+  eq(me.run("window._mealEditor.items.length"),0); ok(h.includes('Search for a food to add it'));
+  ok(!h.includes('data-input="meal-name"')); ok(!h.includes('data-input="meal-notes"')); ok(!h.includes('data-input="meal-ai-desc"'));
+  clickM('meal-more'); ok(modal().includes('data-input="meal-name"') && modal().includes('data-input="meal-notes"'));
+  typeM('meal-name','Big lunch'); clickM('meal-more'); ok(modal().includes('More details <span class="meal-more-sum">(Big lunch)</span>'));
+  clickM('meal-photo-open'); ok(modal().includes('data-input="meal-ai-desc"')); clickM('meal-photo-open'); ok(!modal().includes('data-input="meal-ai-desc"'));
+  // Meal type is a dropdown: built-ins, then custom, then "Add another…".
+  ok(h.includes('<option value="breakfast" selected>Breakfast</option>')); ok(h.includes('<option value="__add__">'));
+  typeM('meal-cat-select','dinner'); eq(me.run("window._mealEditor.category"),'dinner');
+  typeM('meal-cat-select','bogus'); eq(me.run("window._mealEditor.category"),'');
+  // Adding a custom type: named, saved (synced with food), selected, listed after the built-ins.
+  me.run("prompt=()=>'  Pre-bed   snack '"); typeM('meal-cat-select','__add__');
+  const cid=me.run("window._mealEditor.category"); ok(/^c-/.test(cid));
+  eq(me.run("customCategories()"),[{id:cid,label:'Pre-bed snack'}]);
+  eq(JSON.parse(me.memory.get('caprica_workout_v2')).food.customCategories,[{id:cid,label:'Pre-bed snack'}]);
+  ok(modal().indexOf('>Evening Snack<')<modal().indexOf('>Pre-bed snack<') && modal().indexOf('>Pre-bed snack<')<modal().indexOf('Add another'));
+  // Re-adding the same (or a built-in) name reuses it; cancel or blank changes nothing.
+  me.run("prompt=()=>'PRE-BED SNACK'"); typeM('meal-cat-select','__add__'); eq(me.run("[window._mealEditor.category,customCategories().length]"),[cid,1]);
+  me.run("prompt=()=>'breakfast'"); typeM('meal-cat-select','__add__'); eq(me.run("[window._mealEditor.category,customCategories().length]"),['breakfast',1]);
+  me.run("prompt=()=>null"); typeM('meal-cat-select','__add__'); eq(me.run("[window._mealEditor.category,customCategories().length]"),['breakfast',1]);
+  me.run("prompt=()=>'   '"); typeM('meal-cat-select','__add__'); eq(me.run("customCategories().length"),1);
+  me.run("prompt=()=>'x'.repeat(50)"); typeM('meal-cat-select','__add__'); eq(me.run("customCategories()[1].label.length"),30);
+  // Junk in synced data is ignored.
+  me.run("food.customCategories.push({id:'<b>',label:'Bad'},{id:'c-ok-1',label:''},null)"); eq(me.run("customCategories().length"),2);
+  me.run("food.customCategories.push({id:'c-long-1',label:'y'.repeat(80)})"); eq(me.run("customCategories()[2].label.length"),30);   // over-long name from another device
+  me.run("food.customCategories.pop()");
+  // Custom types work everywhere categories do: grouping, history, labels, import/inbox by name.
+  me.run("addMealToDay('2026-09-25',{id:'p1',name:'Tea',category:'"+cid+"',items:[{name:'Tea',kcal:2}]});addMealToDay('2026-09-25',{id:'p2',name:'Pizza',items:[{kcal:300}]});"
+    +"addMealToDay('2026-09-25',{id:'p3',name:'Breakfast',category:'breakfast',items:[{name:'Oats',kcal:300}]})");
+  eq(me.run("groupMealsByCategory(food.mealsByDay['2026-09-25']).map(g=>g.label)"),['Breakfast','Pre-bed snack','Other']);
+  ok(me.run("renderFoodHistory()").includes('<b>Pre-bed snack</b> Tea'));
+  eq(me.run("resolveCategory('pre-bed snack').id"),cid);
+  eq(me.run("parseInboxPayload({days:[{date:'2026-09-25',meals:[{category:'Pre-bed snack',items:[{kcal:1}]}]}]}).days[0].meals[0].category"),cid);
+  // Items are cards; tap one to edit it with labelled fields; Done closes it.
+  me.run("openMealEditor('2026-09-25',null);window._mealEditor.items=[{name:'Jasmine rice, cooked',kcal:195,proteinG:4,carbsG:42.3,fatG:0.4,grams:150,source:'cnf'},{name:'Whey',kcal:120,proteinG:27}];renderMealEditor()");
+  let c=modal();
+  ok(c.includes('<span class="mic-name">Jasmine rice, cooked</span><span class="mic-kcal">195 kcal</span>')); ok(c.includes('150 g · 4g P · 42.3g C · 0.4g F'));
+  ok(c.includes('Health Canada')); ok(!c.includes('data-input="item-kcal"'));
+  ok(c.includes('<b>This meal: 315 kcal</b> · 31g P'));
+  clickM('item-edit',{index:'1'}); c=modal();
+  ok(c.includes('<span>Protein (g)</span>')); ok(c.includes('data-input="item-kcal" data-index="1" placeholder="0" value="120"')); ok(!c.includes('data-index="0" value="195"'));
+  typeM('item-kcal','150',1); ok(me.el('meal-total').innerHTML.includes('This meal: 345 kcal'));   // total updates as you type
+  clickM('item-done'); ok(!modal().includes('data-input="item-kcal"')); ok(modal().includes('<span class="mic-kcal">150 kcal</span>'));
+  // Add manually opens a new empty card, ready to type.
+  clickM('meal-add-item'); eq(me.run("[window._mealEditor.items.length,window._mealEditor.editing]"),[3,2]); ok(modal().includes('data-input="item-name" data-index="2"'));
+  // Removing a card above the open one keeps the right card open.
+  clickM('meal-remove-item',{index:'0'}); eq(me.run("[window._mealEditor.items.length,window._mealEditor.editing]"),[2,1]);
+  clickM('meal-remove-item',{index:'1'}); eq(me.run("[window._mealEditor.items.length,window._mealEditor.editing]"),[1,null]);
+  // A bad number opens the card that has it.
+  me.run("window._mealEditor.items.push({name:'Bad',kcal:'-5'});window._mealEditor.editing=null;mealSaveDraft()");
+  eq(me.run("window._mealEditor.editing"),1); ok(me.el('toast').textContent.includes('kcal must be a number'));
+  // Empty total hidden; no items -> no total line.
+  me.run("window._mealEditor.items=[];renderMealEditor()"); ok(modal().includes('<div class="meal-total" id="meal-total"></div>'));
+  // Saved-meal mode: name up top, no time/photo/details; its dropdown says "No meal type".
+  me.run("openSavedMealEditor(null)"); c=modal();
+  ok(c.includes('data-input="meal-name"')); ok(!c.includes('data-input="meal-time"')); ok(!c.includes('meal-photo')); ok(!c.includes('meal-more')); ok(c.includes('— No meal type —'));
+  // Names in cards are escaped.
+  me.run("openMealEditor('2026-09-25',null);window._mealEditor.items=[{name:'<img src=x>',kcal:1}];renderMealEditor()"); ok(!modal().includes('<img src=x>'));
+}
+
 (async()=>{
   // --- Local test copies never sync (a junk row was created this way on 2026-09-25) ---
   for (const loc of [{hostname:'localhost',protocol:'http:'},{hostname:'127.0.0.1',protocol:'http:'},{hostname:'',protocol:'file:'},{hostname:'app.localhost',protocol:'http:'}]){
@@ -654,6 +730,11 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   eq(fx.run("window._mealEditor.search"),null);
   eq(fx.run("window._mealEditor.items.map(i=>[i.name,i.kcal,i.proteinG,i.carbsG,i.fatG,i.grams,i.source,i.sourceRef])"),[['Banana, raw',105,1.3,27,0.4,118,'cnf','1704']]);  // blank starter row replaced
   eq(fx.memory.get('caprica_workout_v2'),blobBefore);                                   // nothing saved yet
+  // An empty manual row left open is replaced by the searched food, not kept as a blank.
+  fx.run("mealAddItem()"); eq(fx.run("window._mealEditor.items.length"),2);
+  clickF('fs-open'); await tick(); typeF('fs-q','banana'); await fx.run("fsPick(window._mealEditor,'cnf',0)"); clickF('fs-add');
+  eq(fx.run("window._mealEditor.items.map(i=>i.name)"),['Banana, raw','Banana, raw']);
+  fx.run("window._mealEditor.items.pop()");
   // Details are cached: picking the same food again doesn't refetch.
   clickF('fs-open'); await tick(); fx.run("window.__f=[]"); typeF('fs-q','banana'); await fx.run("fsPick(window._mealEditor,'cnf',0)");
   ok(!fx.run("window.__f").some(u=>u.includes('nutrientamount'))); clickF('fs-back'); ok(fx.el('modal').innerHTML.includes('data-input="fs-q"'));
@@ -976,11 +1057,17 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   eq(p.run("(food.mealsByDay['2026-09-23']||[]).length"),0);
   const modal=p.el('modal').innerHTML;
   ok(modal.includes('nothing is saved until you tap Save')); ok(modal.includes('Assumed: 2 large eggs'));
-  ok(!modal.includes('<img src=x')); ok(!modal.includes('<b>Oil')); ok(modal.includes('AI estimate · medium confidence'));
+  ok(!modal.includes('<img src=x')); ok(!modal.includes('<b>Oil')); ok(modal.includes('AI estimate · medium'));
+  p.run("window._mealEditor.editing=0;renderMealEditor()"); ok(p.el('modal').innerHTML.includes('AI estimate · medium confidence · butter assumed'));   // opened card: full detail
+  p.run("window._mealEditor.editing=null");
   // The user edits a number, then saves: AI markers survive, and the meal is flagged.
   p.run("window._mealEditor.items[1].name='Toast';window._mealEditor.items[1].kcal='80';mealSaveDraft()");
   eq(p.run("food.mealsByDay['2026-09-23'][0].items.map(i=>[i.name,i.kcal,i.source])"),[['Scrambled eggs',230,'ai'],['Toast',80,'ai']]);
   eq(p.run("food.mealsByDay['2026-09-23'][0].aiAssisted"),true);
+  // An empty manual row left open is replaced by the photo result, not kept as a blank.
+  p.run("openMealEditor('2026-09-23',null);mealAddItem();window.__resp={items:[{name:'Toast',kcal:80,confidence:'high'}]}");
+  await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
+  eq(p.run("window._mealEditor.items.map(i=>i.name)"),['Toast']);
   // A second photo adds to rows already typed rather than replacing them.
   p.run("openMealEditor('2026-09-23',null);window._mealEditor.items=[{name:'Coffee',kcal:'5'}];window.__resp={items:[{name:'Banana',kcal:105,confidence:'high'}]}");
   await p.run("onMealPhotoChosen({files:[{type:'image/jpeg'}],value:'x'})");
@@ -1009,5 +1096,5 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, food search, public-site rules, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, meal editor, food search, public-site rules, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});
