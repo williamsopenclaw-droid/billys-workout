@@ -11,11 +11,16 @@ let checks=0, finished=false;
 // looks like a pass. Treat not reaching the end as a failure.
 process.on('exit',()=>{ if(!finished){ console.error('TESTS DID NOT FINISH after '+checks+' assertions'); process.exitCode=1; } });
 function app(date='2026-09-20', saved=null){
-  const elements=new Map(), memory=new Map(), listeners={};
+  const elements=new Map(), memory=new Map(), listeners={}, winListeners={};
+  // history: back() drops the top entry and fires popstate, like Android's back
+  // button; backing out of the last entry records that the app closed.
+  const hist={entries:[{state:null}],closed:false,
+    pushState(st){this.entries.push({state:st});},replaceState(st){this.entries[this.entries.length-1]={state:st};},
+    back(){ if(this.entries.length<=1){this.closed=true;return;} this.entries.pop(); (winListeners.popstate||[]).forEach(f=>f({state:this.entries[this.entries.length-1].state})); }};
   if(saved) memory.set('caprica_workout_v2',JSON.stringify(saved));
   function el(id){
     if(!elements.has(id)) elements.set(id,{innerHTML:'',textContent:'',value:'',style:{},dataset:{},
-      classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+      classList:(()=>{const c=new Set();return {add(x){c.add(x);},remove(x){c.delete(x);},toggle(x,on){(on===undefined?!c.has(x):on)?c.add(x):c.delete(x);},contains(x){return c.has(x);}};})(),
       addEventListener(){},getBoundingClientRect(){return {top:0,bottom:100};},focus(){},click(){},scrollIntoView(){}});
     return elements.get(id);
   }
@@ -24,13 +29,14 @@ function app(date='2026-09-20', saved=null){
     localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,String(v)),removeItem:k=>memory.delete(k)},
     document:{getElementById:el,querySelector:el,querySelectorAll:()=>[],createElement:()=>el('new'),
       addEventListener(t,f){(listeners[t]=listeners[t]||[]).push(f);}},
-    window:{scrollY:0,innerHeight:900,scrollTo(){},addEventListener(){},matchMedia:()=>({matches:false})},
+    window:{scrollY:0,innerHeight:900,scrollTo(){},addEventListener(t,f){(winListeners[t]=winListeners[t]||[]).push(f);},matchMedia:()=>({matches:false})},
+    history:hist,
     navigator:{userAgent:'test',onLine:false},location:{reload(){}},
     setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},
     confirm:()=>true,prompt:()=>null,Blob,URL,crypto:require('node:crypto').webcrypto,
     fetch:()=>Promise.reject(new Error('offline'))});
   vm.runInContext(scripts[0][1],ctx);
-  return {run:s=>vm.runInContext(s,ctx),el,memory,fire:t=>(listeners[t]||[]).forEach(f=>f({}))};
+  return {run:s=>vm.runInContext(s,ctx),el,memory,hist,fire:t=>(listeners[t]||[]).forEach(f=>f({}))};
 }
 function eq(actual,expected){assert.deepEqual(actual === undefined ? undefined : JSON.parse(JSON.stringify(actual)),expected);checks++;}
 function ok(value){assert.ok(value);checks++;}
@@ -1095,6 +1101,139 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   await realCompress({type:'image/jpeg',size:40*1024*1024}).then(()=>ok(false),e=>ok(e.message.includes('too large')));
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
+  // --- Android back button (v51) ---
+  // One guard entry is kept above the page; each back press consumes it, the
+  // app handles it, and the guard is put back.
+  const bk=app('2026-09-25');
+  eq(bk.hist.entries.length,2); eq(bk.hist.entries[1].state,{bw:'guard'});
+  const toastOf=x=>x.el('toast').textContent;
+  const actOn=(x,act)=>x.run("(()=>{const e={dataset:{act:'"+act+"'}};e.closest=()=>e;handleFoodClick({target:e});})()");
+  // At the first screen: the first back only warns, the second closes the app.
+  bk.hist.back(); ok(toastOf(bk).includes('Press back again')); ok(!bk.hist.closed); eq(bk.hist.entries.length,2);
+  bk.hist.back(); ok(bk.hist.closed);
+  // The warning runs out after 2 s.
+  const bx=app('2026-09-25');
+  bx.hist.back(); bx.run("navExitArmedAt-=3000"); bx.el('toast').textContent='';
+  bx.hist.back(); ok(!bx.hist.closed); ok(toastOf(bx).includes('Press back again'));
+  // Screens: back retraces them in reverse, one per press, then warns.
+  const bn=app('2026-09-25');
+  const blob0=bn.memory.get('caprica_workout_v2');
+  bn.run("switchSection('workout')"); eq(bn.run("navStack.length"),0);           // no change, nothing recorded
+  bn.run("switchSection('food');setFoodTab('history');setFoodDay('2026-09-22')");
+  eq(bn.run("[viewState.section,viewState.foodTab,viewState.foodDay]"),['food','today','2026-09-22']);
+  bn.hist.back(); eq(bn.run("[viewState.section,viewState.foodTab,viewState.foodDay]"),['food','history',null]);
+  bn.hist.back(); eq(bn.run("[viewState.section,viewState.foodTab]"),['food','today']);
+  bn.hist.back(); eq(bn.run("viewState.section"),'workout'); eq(bn.el('view-bar').style.display,'');
+  eq(bn.run("navStack.length"),0); ok(!bn.hist.closed); eq(bn.hist.entries.length,2);
+  bn.hist.back(); ok(toastOf(bn).includes('Press back again')); ok(!bn.hist.closed);
+  eq(bn.memory.get('caprica_workout_v2'),blob0);                                   // navigation is never saved as data
+  eq(JSON.parse(bn.memory.get('caprica_workout_v2_view')).section,'workout');     // but the view pref follows
+  // Workout day view: back returns to the calendar, with its bars shown again.
+  const bd=app('2026-09-25');
+  bd.run("goToDay('2026-09-22')"); eq(bd.el('view-bar').style.display,'none');
+  bd.hist.back(); ok(bd.run("viewState.mode")!=='day'); eq(bd.el('view-bar').style.display,''); eq(bd.el('mode-toggle').style.display,'');
+  // The on-screen "Calendar" / "Back to today" buttons pop rather than push,
+  // so back doesn't bounce between two screens.
+  bd.run("goToDay('2026-09-22');backToMonth()"); eq(bd.run("navStack.length"),0);
+  bd.run("switchSection('food');setFoodDay('2026-09-20');setFoodDay(null)"); eq(bd.run("navStack.length"),1);
+  // The list is capped.
+  bd.run("for(let i=1;i<=40;i++) setFoodDay(addDays('2026-09-24',-i))"); eq(bd.run("navStack.length"),30);
+  // Sheets close before screens change.
+  const bs=app('2026-09-25');
+  bs.run("switchSection('food');openGoalsEditor()"); ok(bs.el('modal-overlay').classList.contains('show'));
+  bs.hist.back(); ok(!bs.el('modal-overlay').classList.contains('show')); eq(bs.run("window._goalsEditor"),null); eq(bs.run("viewState.section"),'food');
+  bs.run("openBurnedEditor('2026-09-25')"); bs.hist.back(); ok(!bs.el('modal-overlay').classList.contains('show')); eq(bs.run("window._burnedEditor"),null);
+  // Meal editor: back steps out of a picked result, then search, then an open card, then the sheet.
+  bs.run("window.__asked=[];confirm=m=>{window.__asked.push(m);return window.__answer;}");
+  bs.run("openMealEditor('2026-09-25',null);window._mealEditor.search={q:'egg',mine:[],cnf:[],off:[],pick:{name:'Egg'}}");
+  bs.hist.back(); eq(bs.run("window._mealEditor.search.pick"),null); ok(bs.run("!!window._mealEditor.search"));
+  bs.hist.back(); eq(bs.run("window._mealEditor.search"),null);
+  bs.run("window._mealEditor.editing=0"); bs.hist.back(); eq(bs.run("window._mealEditor.editing"),null); ok(bs.el('modal-overlay').classList.contains('show'));
+  bs.hist.back(); eq(bs.run("window._mealEditor"),null); eq(bs.run("window.__asked.length"),0);   // untouched: closes without asking
+  // A changed meal asks first; "Cancel" keeps it open with nothing lost.
+  bs.run("openMealEditor('2026-09-25',null);window._mealEditor.items.push({name:'Toast',kcal:'80'});window.__answer=false");
+  bs.hist.back(); ok(bs.run("window.__asked[0]").includes('Discard this meal')); ok(bs.el('modal-overlay').classList.contains('show'));
+  eq(bs.run("window._mealEditor.items.length"),1); eq(bs.hist.entries.length,2); ok(!bs.hist.closed);
+  bs.run("window.__answer=true"); bs.hist.back(); eq(bs.run("window._mealEditor"),null);
+  eq(bs.run("(food.mealsByDay['2026-09-25']||[]).length"),0);                      // discarded, not saved
+  // Editing an existing meal: unchanged closes quietly; a changed time asks.
+  bs.run("food.mealsByDay['2026-09-25']=[{id:'m1',name:'Lunch',category:'lunch',time:'12:00 PM',items:[{id:'i1',name:'Soup',kcal:200}]}]");
+  bs.run("window.__asked=[];openMealEditor('2026-09-25','m1')"); bs.hist.back(); eq(bs.run("window.__asked.length"),0);
+  bs.run("openMealEditor('2026-09-25','m1');window._mealEditor.time='1:00 PM';window.__answer=false"); bs.hist.back(); eq(bs.run("window.__asked.length"),1);
+  bs.run("mealCancel()");
+  // Saved meals and recipes ask with their own wording.
+  bs.run("window.__asked=[];openSavedMealEditor(null);window._mealEditor.name='Shake'"); bs.hist.back(); ok(bs.run("window.__asked[0]").includes('saved meal')); bs.run("mealCancel()");
+  bs.run("window.__asked=[];openRecipeEditor(null)"); bs.hist.back(); eq(bs.run("window.__asked.length"),0); eq(bs.run("window._recipeEditor"),null);
+  bs.run("openRecipeEditor(null);window._recipeEditor.name='Chili'"); bs.hist.back();
+  ok(bs.run("window.__asked[0]").includes('recipe')); ok(bs.run("!!window._recipeEditor")); ok(bs.el('modal-overlay').classList.contains('show'));
+  // Guard is always restored after the app handled the press.
+  eq(bs.hist.entries.length,2); ok(!bs.hist.closed);
+
+  // --- Calories burned (v51) ---
+  const cb=app('2026-09-25');
+  eq(cb.run("burnedFor('2026-09-25')"),null);
+  ok(cb.run("renderFoodToday()").includes('+ Add calories burned'));
+  cb.run("openBurnedEditor('2026-09-25')"); ok(cb.el('modal').innerHTML.includes('data-input="burned-kcal"')); ok(!cb.el('modal').innerHTML.includes('burned-clear'));
+  for (const bad of ['','50','abc','20000']){
+    cb.el('toast').textContent='';
+    cb.run("window._burnedEditor.kcal="+JSON.stringify(bad)+";burnedSave(false)");
+    ok(toastOf(cb).includes('must be')); eq(cb.run("burnedFor('2026-09-25')"),null); ok(cb.run("!!window._burnedEditor"));
+  }
+  cb.run("handleFoodInput({target:{dataset:{input:'burned-kcal'},value:'2650.4'}})"); eq(cb.run("window._burnedEditor.kcal"),'2650.4');   // typing reaches the draft
+  cb.run("burnedSave(false)");
+  eq(cb.run("burnedFor('2026-09-25')"),2650); eq(cb.run("food.burnedByDay['2026-09-25'].source"),'manual');
+  eq(cb.run("window._burnedEditor"),null); ok(!cb.el('modal-overlay').classList.contains('show'));
+  eq(JSON.parse(cb.memory.get('caprica_workout_v2')).food.burnedByDay['2026-09-25'].kcal,2650);   // saved, so it syncs
+  // Eaten vs burned on the day and in History.
+  cb.run("food.mealsByDay['2026-09-25']=[{id:'m1',name:'Day',category:'lunch',items:[{id:'i1',name:'Food',kcal:2150}]}]");
+  ok(cb.run("renderFoodToday()").includes('2,150 eaten · 2,650 burned · 500 under'));
+  ok(cb.run("renderFoodHistory()").includes('2,150 eaten · 2,650 burned · 500 under'));
+  eq(cb.run("[burnedBalance(2800,2650),burnedBalance(2650.2,2650),fmtKcal(12345.6),fmtKcal(-980)]"),['2,800 eaten · 2,650 burned · 150 over','2,650 eaten · 2,650 burned · even','12,346','980']);
+  eq(cb.run("renderFoodHistory()").split(' eaten · ').length,2);                         // only the day with a number gets the line
+  // Editing shows the current number and a remove button; remove clears the day only.
+  cb.run("setBurned('2026-09-24',2400,'manual');openBurnedEditor('2026-09-25')");
+  ok(cb.el('modal').innerHTML.includes('value="2650"')); ok(cb.el('modal').innerHTML.includes('burned-clear'));
+  cb.run("burnedSave(true)"); eq(cb.run("[burnedFor('2026-09-25'),burnedFor('2026-09-24')]"),[null,2400]);
+  // The Day screen's button opens it for the day being shown.
+  cb.run("setFoodDay('2026-09-24')"); actOn(cb,'burned-edit');
+  eq(cb.run("window._burnedEditor.ds"),'2026-09-24'); actOn(cb,'burned-cancel');
+  eq(cb.run("window._burnedEditor"),null); eq(cb.run("burnedFor('2026-09-24')"),2400);
+  // Bad stored entries count as none; fields a newer build added survive a change.
+  cb.run("food.burnedByDay={a:{kcal:'abc'},b:{kcal:50},c:null,d:{kcal:2000,futureField:7},e:5}");
+  eq(cb.run("['a','b','c','e','zz'].map(burnedFor)"),[null,null,null,null,null]);
+  cb.run("setBurned('d',2100,'manual')"); eq(cb.run("food.burnedByDay.d.futureField"),7); eq(cb.run("food.burnedByDay.d.kcal"),2100);
+  cb.run("food.burnedByDay='junk'"); eq(cb.run("burnedFor('d')"),null); ok(cb.run("renderFoodToday()").includes('+ Add calories burned'));
+  // Survives a reload and a save (unknown food keys and entry fields are kept).
+  const cbSaved=JSON.parse(cb.memory.get('caprica_workout_v2')); cbSaved.food.burnedByDay={'2026-09-23':{kcal:2500,source:'manual',futureField:1}};
+  const cb2=app('2026-09-25',cbSaved); cb2.run("saveState()");
+  eq(JSON.parse(cb2.memory.get('caprica_workout_v2')).food.burnedByDay['2026-09-23'],{kcal:2500,source:'manual',futureField:1});
+  // Inbox: a day may carry burnedKcal, with or without meals.
+  const bp=p=>cb2.run("parseInboxPayload("+JSON.stringify(p)+")");
+  eq(bp({days:[{date:'2026-09-24',burnedKcal:2650}]}).days,[{date:'2026-09-24',meals:[],burnedKcal:2650}]);
+  eq(bp({days:[{date:'2026-09-24',burnedKcal:2650.6,meals:[okMeal]}]}).days[0].burnedKcal,2651);
+  eq(bp({days:[{date:'2026-09-24',meals:[okMeal]}]}).days[0].burnedKcal,undefined);
+  for (const [p,msg] of [[{days:[{date:'2026-09-24',burnedKcal:'2650'}]},'calories burned must be'],[{days:[{date:'2026-09-24',burnedKcal:50}]},'calories burned must be'],
+     [{days:[{date:'2026-09-24'}]},'no meals or calories burned'],[{days:[{date:'2026-09-24',meals:[]}]},'no meals or calories burned'],
+     [{days:[{date:'2026-09-24',meals:'x',burnedKcal:2650}]},'meals must be a list']]){
+    ok((bp(p).errors||[]).join(' ').includes(msg));
+  }
+  cb2.run("setBurned('2026-09-24',2400,'manual')");
+  cb2.run("inboxState.rows=[Object.assign({id:'b1',note:''},parseInboxPayload({days:[{date:'2026-09-24',burnedKcal:2650}]}))]");
+  ok(cb2.run("renderInboxBanner()").includes('1 suggestion'));
+  cb2.run("openInboxReview()"); ok(cb2.el('modal').innerHTML.includes('Calories burned')); ok(cb2.el('modal').innerHTML.includes('replaces 2,400'));
+  cb2.run("inboxAccept('b1')");
+  eq(cb2.run("[burnedFor('2026-09-24'),food.burnedByDay['2026-09-24'].source]"),[2650,'claude-inbox']);
+  eq(cb2.run("food.mealsByDay['2026-09-24']"),undefined);                                // no empty meal list made
+  ok(cb2.run("food.inbox.done.includes('b1')")); ok(toastOf(cb2).includes('Calories burned added'));
+  cb2.run("inboxState.rows=[Object.assign({id:'b2',note:''},parseInboxPayload({days:[{date:'2026-09-23',burnedKcal:2700,meals:[{category:'Lunch',items:[{kcal:1}]}]}]}))];inboxAccept('b2')");
+  eq(cb2.run("[burnedFor('2026-09-23'),food.mealsByDay['2026-09-23'].length]"),[2700,1]); ok(toastOf(cb2).includes('1 meal and calories burned'));
+  // The posting tool accepts the same shapes.
+  eq(tool.checkPayload({days:[{date:'2026-09-24',burnedKcal:2650}]},'2026-09-24'),[]);
+  eq(tool.checkPayload({days:[{date:'2026-09-24',burnedKcal:2650,meals:[{items:[{kcal:5}]}]}]},'2026-09-24'),[]);
+  ok(tool.checkPayload({days:[{date:'2026-09-24',burnedKcal:'2650'}]},'2026-09-24').join(' ').includes('burnedKcal must be'));
+  ok(tool.checkPayload({days:[{date:'2026-09-24',burnedKcal:20000}]},'2026-09-24').join(' ').includes('burnedKcal must be'));
+  ok(tool.checkPayload({days:[{date:'2026-09-24'}]},'2026-09-24').join(' ').includes('no meals or burnedKcal'));
+  ok(tool.checkPayload({days:[{date:'2026-09-24',meals:'x',burnedKcal:2650}]},'2026-09-24').join(' ').includes('meals must be a list'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, meal editor, food search, public-site rules, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, meal editor, food search, public-site rules, photo function, photo flow, back button and calories burned.');
 })().catch(e=>{console.error(e);process.exit(1);});

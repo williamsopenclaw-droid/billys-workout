@@ -13,6 +13,8 @@
 // <day.json> is { "days": [ { "date": "YYYY-MM-DD", "meals": [ { "category": "Lunch",
 //   "name": "...", "notes": "", "items": [ { "name": "...", "kcal": 0, "proteinG": 0,
 //   "carbsG": 0, "fatG": 0, "grams": 0 } ] } ] } ] }. The app re-validates everything.
+// A day may also carry "burnedKcal": 2650 (the day's total burned from Samsung
+// Health) — with meals, or on its own with no "meals" at all.
 
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -45,8 +47,11 @@ export function checkPayload(p, today){
   p.days.forEach((d, i) => {
     if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) errors.push('day ' + (i + 1) + ': date must be YYYY-MM-DD');
     else if (today && d.date > today) errors.push('day ' + (i + 1) + ': ' + d.date + ' is in the future');
-    if (!d || !Array.isArray(d.meals) || !d.meals.length) errors.push('day ' + (i + 1) + ': no meals');
-    else d.meals.forEach((m, j) => {
+    const b = d && d.burnedKcal;
+    if (b != null && !(typeof b === 'number' && isFinite(b) && b >= 100 && b <= 15000)) errors.push('day ' + (i + 1) + ': burnedKcal must be a number from 100 to 15000');
+    if (d && d.meals != null && !Array.isArray(d.meals)) errors.push('day ' + (i + 1) + ': meals must be a list');
+    else if (!d || !((d.meals && d.meals.length) || b != null)) errors.push('day ' + (i + 1) + ': no meals or burnedKcal');
+    else (d.meals || []).forEach((m, j) => {
       if (!m || !Array.isArray(m.items) || !m.items.length) errors.push('day ' + (i + 1) + ', meal ' + (j + 1) + ': no items');
       else m.items.forEach((it, k) => ['kcal', 'proteinG', 'carbsG', 'fatG', 'grams'].forEach(f => {
         const v = it && it[f];
@@ -113,7 +118,8 @@ async function main(argv){
   if (cmd === 'pending'){
     const rows = await pending(key);
     if (!rows.length) console.log('No suggestions waiting.');
-    rows.forEach(r => console.log(r.created_at + '  ' + ((r.payload && r.payload.days) || []).map(d => d.date + ' (' + ((d.meals || []).length) + ' meals)').join(', ') + (r.note ? '  — ' + r.note : '')));
+    rows.forEach(r => console.log(r.created_at + '  ' + ((r.payload && r.payload.days) || []).map(d => d.date + ' (' + ((d.meals || []).length) + ' meals'
+      + (d.burnedKcal != null ? ', ' + d.burnedKcal + ' burned' : '') + ')').join(', ') + (r.note ? '  — ' + r.note : '')));
     return 0;
   }
   if (cmd === 'post'){
@@ -125,8 +131,10 @@ async function main(argv){
     const errors = checkPayload(payload, localToday());
     if (errors.length){ errors.forEach(e => console.error('✗ ' + e)); return 1; }
     await post(key, payload, note);
-    const meals = payload.days.reduce((a, d) => a + d.meals.length, 0);
-    console.log('Posted ' + meals + ' meal(s) for ' + payload.days.map(d => d.date).join(', ') + '. William reviews them in the app.');
+    const meals = payload.days.reduce((a, d) => a + (d.meals || []).length, 0);
+    const burned = payload.days.filter(d => d.burnedKcal != null).length;
+    console.log('Posted ' + meals + ' meal(s)' + (burned ? ' and ' + burned + ' day(s) of calories burned' : '') + ' for '
+      + payload.days.map(d => d.date).join(', ') + '. William reviews them in the app.');
     return 0;
   }
   console.error('Usage: node tools/food-inbox.mjs post <day.json> [--note "text"] | pending | selftest');

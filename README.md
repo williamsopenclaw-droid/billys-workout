@@ -15,7 +15,8 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 
 ### Food tab
 - **Day** — today's meals grouped by Breakfast, Morning Snack, Lunch, and so on, with your calorie and protein progress. **‹ ›** moves between days. **Edit goals** changes your daily targets.
-- **History** — each day's totals and what you ate. Tap a day to open it.
+- **🔥 Calories burned** — under your progress on the Day screen. Tap it and type the day's total calories burned from Samsung Health, or put "Burned: 2650" in the list you send Claude. The day then shows "2,150 eaten · 2,650 burned · 500 under". Tap it again to change or remove it.
+- **History** — each day's totals and what you ate (and eaten vs burned, when you've added it). Tap a day to open it.
 - **Saved** — one-tap meals you have regularly. ✎ edits one; **+ New saved meal** builds one; **⤓ Import** takes a list Claude prepares.
 - **Recipes** — meal-prep batches. **Log amount…** logs part of a portion or a weight (weigh the whole cooked batch once and enter it under Edit).
 
@@ -34,6 +35,9 @@ In any meal, tap **🔎 Search food…** and start typing:
 - **Packaged foods** — brands sold in Canada, from Open Food Facts. Anyone can add to it, so a ⚠️ means the numbers don't add up — check the package.
 
 Tap a result, choose grams or a serving size, and tap **Add to meal**. It's added as a normal row you can still edit; nothing is saved until you tap Save.
+
+### The back button
+Android's back button goes back one step inside the app: it closes whatever is open (a search, a food card, a sheet), then returns to the screen you were on before. If you've changed a meal and haven't saved it, it asks before throwing it away. On the first screen it says **"Press back again to close"** — press back again to leave the app.
 
 ### Admin tab
 Sync (status, **Sync now**, and **Sync settings** with your codes), the Claude inbox, **Backup**, **Restore** and the workout **CSV** all live here. If sync needs attention, the tab itself shows 📴 (no connection) or ⚠️ (a problem), so you'll see it from any screen.

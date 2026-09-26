@@ -358,6 +358,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-progress-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .food-progress-foot .mini-btn{font-size:12px;padding:6px 10px}
 .food-progress-foot .food-remaining{margin-top:0}
+.food-burned{display:block;width:100%;margin-top:10px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;background:transparent;color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .food-day-cats{margin-top:6px;font-size:12px;color:var(--text);line-height:1.4}
 .food-day-cat b{color:var(--accent);font-weight:600;margin-right:2px}
 /* v40: AI photo estimate */
@@ -832,7 +833,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1357,6 +1358,7 @@ function navToday(){
 }
 
 function goToDay(ds){
+  const prev = navSnapshot();
   viewState.dayAnchor = ds;
   viewState.mode = 'day';
   // hide view-bar; restore when returning
@@ -1365,15 +1367,18 @@ function goToDay(ds){
   document.getElementById('mode-toggle').style.display = 'none';
   render();
   window.scrollTo(0, 0);
+  navRecord(prev);
 }
 
 function backToMonth(){
+  const prev = navSnapshot();
   viewState.mode = 'monthly';
   const vb = document.getElementById('view-bar');
   if (vb) vb.style.display = '';
   document.getElementById('mode-toggle').style.display = '';
   updateNavLabels();
   render();
+  navRecord(prev);
 }
 
 function updateNavLabels(){
@@ -2014,8 +2019,80 @@ function renderAdmin(){
   return h + '</div>';
 }
 
+// ---- Android back button (v51) ----
+// An installed web app has no history of its own, so Android's back button
+// closed the app from any screen. We keep one "guard" history entry: each back
+// press consumes it, handleBack() deals with the press in the app (innermost
+// sheet first, then the previous screen), and the guard is re-armed. At the
+// first screen, back asks for a second press within 2 s before closing.
+const NAV_MAX = 30;
+let navStack = [], navExitArmedAt = 0, navExiting = false;
+function navSnapshot(){
+  const s = { section: viewState.section, foodTab: viewState.foodTab || 'today', foodDay: viewState.foodDay || null,
+              mode: viewState.mode === 'day' ? 'day' : 'list' };
+  if (s.mode === 'day') s.dayAnchor = viewState.dayAnchor;
+  return s;
+}
+function navSame(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
+// After a screen change, remember where we came from. Going back to the screen
+// we just left with an on-screen button ("← Calendar", "Back to today") pops
+// instead of pushing, so the back button doesn't bounce between the two.
+function navRecord(prev){
+  const now = navSnapshot();
+  if (navSame(prev, now)) return;
+  if (navStack.length && navSame(navStack[navStack.length - 1], now)) navStack.pop();
+  else { navStack.push(prev); if (navStack.length > NAV_MAX) navStack.shift(); }
+}
+// Sets the view directly (not through switchSection etc.), so restoring a
+// screen never records a new step.
+function navApply(s){
+  viewState.section = s.section; viewState.foodTab = s.foodTab; viewState.foodDay = s.foodDay;
+  if (s.mode === 'day'){ viewState.mode = 'day'; viewState.dayAnchor = s.dayAnchor; }
+  else if (viewState.mode === 'day') viewState.mode = 'monthly';
+  const workoutChrome = s.section === 'workout' && viewState.mode !== 'day';
+  ['view-bar', 'mode-toggle'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = workoutChrome ? '' : 'none'; });
+  document.querySelectorAll('.section-seg').forEach(b => { if (b.dataset.section) b.classList.toggle('active', b.dataset.section === s.section); });
+  saveViewPrefs(); updateNavLabels(); render();
+}
+function modalIsOpen(){ const ov = document.getElementById('modal-overlay'); return !!(ov && ov.classList.contains('show')); }
+function editorSnapshot(d){ return JSON.stringify([d.name || '', d.time || '', d.category || '', d.notes || '', d.items || []]); }
+function recipeSnapshot(r){ return JSON.stringify([r.name, r.portions, r.cookedWeightG, r.ingredients]); }
+// → 'sheet' (a sheet or sub-view closed), 'screen' (previous screen shown),
+//   'kept' (user chose not to discard), 'arm-exit' (first back at the first screen), 'exit'.
+function handleBack(){
+  if (modalIsOpen()){
+    const d = window._mealEditor;
+    if (d){
+      if (d.search && d.search.pick){ d.search.pick = null; renderMealEditor(); return 'sheet'; }
+      if (d.search){ d.search = null; renderMealEditor(); return 'sheet'; }
+      if (d.editing != null){ d.editing = null; renderMealEditor(); return 'sheet'; }
+      if (d.orig !== undefined && d.orig !== editorSnapshot(d)
+          && !confirm(d.kind === 'saved' ? 'Discard your changes to this saved meal?' : 'Discard this meal? What you entered hasn\'t been saved.')) return 'kept';
+      mealCancel();
+      return 'sheet';
+    }
+    const r = window._recipeEditor;
+    if (r && r.orig !== undefined && r.orig !== recipeSnapshot(r) && !confirm('Discard your changes to this recipe?')) return 'kept';
+    window._recipeEditor = null; window._recipeLog = null; window._goalsEditor = null; window._importSaved = null; window._burnedEditor = null;
+    closeModal();
+    return 'sheet';
+  }
+  if (navStack.length){ navApply(navStack.pop()); return 'screen'; }
+  if (Date.now() - navExitArmedAt < 2000) return 'exit';
+  navExitArmedAt = Date.now();
+  toast('Press back again to close');
+  return 'arm-exit';
+}
+function navGuard(){ try { history.pushState({ bw: 'guard' }, ''); } catch (e) {} }
+function onPopState(){
+  if (navExiting){ history.back(); return; }              // walking out past any older entries
+  if (handleBack() === 'exit'){ navExiting = true; history.back(); return; }
+  navGuard();
+}
+
 function switchSection(section){
   if (!SECTIONS.includes(section)) return;
+  const prev = navSnapshot();
   viewState.section = section;
   // Hide workout-only chrome on Food and Admin; mirror the existing goToDay/backToMonth pattern.
   ['view-bar','mode-toggle'].forEach(id => {
@@ -2025,6 +2102,7 @@ function switchSection(section){
   document.querySelectorAll('.section-seg').forEach(b => b.classList.toggle('active', b.dataset.section === section));
   saveViewPrefs();                     // not saveState(): navigation isn't a data change
   render();
+  navRecord(prev);
 }
 
 function switchMode(mode){
@@ -2086,6 +2164,62 @@ function foodTotalsForDay(ds){
       count: acc.count + 1
     };
   }, { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, count: 0 });
+}
+// ---- Calories burned (v51) ----
+// food.burnedByDay = { 'YYYY-MM-DD': { kcal, source: 'manual'|'claude-inbox', at } },
+// the day's total energy burned from Samsung Health, typed in or sent through
+// the Claude inbox. Synced with the rest of food; older builds keep the field
+// (unknown food keys survive). Read defensively: a bad entry counts as none.
+const BURNED_LIMITS = [100, 15000];
+function burnedFor(ds){
+  const e = food.burnedByDay && typeof food.burnedByDay === 'object' ? food.burnedByDay[ds] : null;
+  const n = e && typeof e === 'object' ? Number(e.kcal) : NaN;
+  return isFinite(n) && n >= BURNED_LIMITS[0] && n <= BURNED_LIMITS[1] ? Math.round(n) : null;
+}
+// kcal null clears the day. Keeps any fields a newer build added to the entry.
+function setBurned(ds, kcal, source){
+  const all = Object.assign({}, food.burnedByDay && typeof food.burnedByDay === 'object' ? food.burnedByDay : {});
+  if (kcal == null) delete all[ds];
+  else all[ds] = Object.assign({}, all[ds], { kcal: Math.round(kcal), source: source, at: new Date().toISOString() });
+  food.burnedByDay = all;
+}
+// "2,650" — commas by hand so it reads the same on every device and locale.
+function fmtKcal(n){ return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+// "2,150 eaten · 2,650 burned · 500 under" (under = burned more than eaten).
+function burnedBalance(eaten, burned){
+  const diff = Math.round(burned) - Math.round(eaten);
+  return fmtKcal(eaten) + ' eaten · ' + fmtKcal(burned) + ' burned · '
+    + (diff === 0 ? 'even' : fmtKcal(diff) + (diff > 0 ? ' under' : ' over'));
+}
+function openBurnedEditor(ds){
+  const cur = burnedFor(ds);
+  window._burnedEditor = { ds: ds, kcal: cur != null ? String(cur) : '' };
+  let h = '<h2>Calories burned</h2><div class="food-hint">' + esc(ds === todayStr() ? 'Today' : fmtLong(ds))
+    + ' — the day\'s total calories burned from Samsung Health.</div>';
+  h += '<div class="form-group"><label class="form-label">Burned (kcal)</label>'
+    + '<input class="form-input" type="number" inputmode="numeric" step="any" data-input="burned-kcal" placeholder="e.g. 2650" value="' + esc(window._burnedEditor.kcal) + '"></div>';
+  h += '<button class="btn btn-primary" data-act="burned-save">Save</button>';
+  if (cur != null) h += '<button class="btn btn-secondary" data-act="burned-clear">Remove for this day</button>';
+  h += '<button class="btn btn-secondary" data-act="burned-cancel">Cancel</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function burnedSave(clear){
+  const d = window._burnedEditor;
+  if (!d) return;
+  if (clear) setBurned(d.ds, null);
+  else {
+    const n = Number(d.kcal);
+    if (d.kcal === '' || !isFinite(n) || n < BURNED_LIMITS[0] || n > BURNED_LIMITS[1]){
+      toast('⚠️ Calories burned must be ' + BURNED_LIMITS[0] + '–' + fmtKcal(BURNED_LIMITS[1]));
+      return;
+    }
+    setBurned(d.ds, n, 'manual');
+  }
+  saveState();
+  window._burnedEditor = null;
+  closeModal();
+  toast(clear ? 'Removed' : 'Saved');
 }
 function progressBar(consumed, target, label, color){
   if (!target || target <= 0) return '';
@@ -2185,9 +2319,11 @@ function foodDay(){
   return (d && d < t) ? d : t;
 }
 function setFoodDay(ds){
+  const prev = navSnapshot();
   viewState.foodDay = (ds && ds < todayStr()) ? ds : null;
   viewState.foodTab = 'today';
   render();
+  navRecord(prev);
 }
 function foodLoggingHint(){
   const ds = foodDay();
@@ -2213,7 +2349,10 @@ function renderFoodToday(){
   h += progressBar(totals.kcal, goals.kcal, 'Calories', 'accent');
   h += progressBar(totals.proteinG, goals.proteinG, 'Protein', 'protein');
   h += '<div class="food-progress-foot"><button class="mini-btn" data-act="edit-goals">Edit goals</button>'
-    + '<span class="food-remaining">' + Math.round(remaining) + ' kcal remaining</span></div></div>';
+    + '<span class="food-remaining">' + Math.round(remaining) + ' kcal remaining</span></div>';
+  const burned = burnedFor(ds);
+  h += '<button class="food-burned" data-act="burned-edit">'
+    + (burned != null ? '🔥 ' + esc(burnedBalance(totals.kcal, burned)) : '🔥 + Add calories burned') + '</button></div>';
   if (meals.length === 0){
     h += '<div class="food-empty">' + (isToday ? 'No meals logged yet today. Tap below to log your first meal.'
                                               : 'No meals logged on this day.') + '</div>';
@@ -2268,6 +2407,7 @@ function renderFoodHistory(){
       + '<span class="food-day-pct">' + pct + '%</span></div>'
       + '<div class="food-day-stats">' + Math.round(day.kcal) + ' kcal · ' + Math.round(day.proteinG) + 'g P · '
       + day.count + ' meal' + (day.count === 1 ? '' : 's') + '</div>'
+      + (burnedFor(day.d) != null ? '<div class="food-day-stats">🔥 ' + esc(burnedBalance(day.kcal, burnedFor(day.d))) + '</div>' : '')
       + (cats ? '<div class="food-day-cats">' + cats + '</div>' : '') + '</div>';
   });
   h += '</div>';
@@ -2336,10 +2476,12 @@ function renderFoodNav(){
 
 function setFoodTab(tab){
   if (!['today','history','saved','recipes'].includes(tab)) return;
+  const prev = navSnapshot();
   viewState.foodTab = tab;
   document.querySelectorAll('#food-tab-nav .section-seg').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   saveViewPrefs();
   render();
+  navRecord(prev);
 }
 
 function renderFood(){
@@ -2581,6 +2723,7 @@ function openMealEditor(ds, id){
     // A new meal for today gets the current time; a past day stays blank ("now" would be wrong).
     // No starter row: search (or ✏️ Add manually) adds the rows.
     : { ds: ds, id: null, name: '', time: ds === todayStr() ? nowTimeLabel() : '', category: cat, notes: '', items: [] };
+  window._mealEditor.orig = editorSnapshot(window._mealEditor);   // back button: "has this changed?"
   renderMealEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -2622,6 +2765,7 @@ function openSavedMealEditor(id){
   window._mealEditor = { kind: 'saved', savedId: id || null, ds: foodDay(), name: s.name || '',
     category: categoryById(s.category) ? s.category : '', time: '', notes: '',
     items: (s.items || []).map(it => Object.assign({}, it)) };
+  window._mealEditor.orig = editorSnapshot(window._mealEditor);
   renderMealEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -2823,6 +2967,8 @@ document.addEventListener('change', e => {
 //
 // Payload: { "days": [ { "date": "2026-09-24", "meals": [ { "category": "Lunch",
 //   "name": "Chicken stir-fry", "time": "", "notes": "", "items": [ …same as import… ] } ] } ] }
+// A day may also have "burnedKcal": 2650 (Samsung Health's total burned, v51) —
+// with meals or on its own. Accepting it replaces that day's burned number.
 const INBOX_LIMITS = { days: 14, mealsPerDay: 20, note: 200, mealNotes: 300, time: 20, done: 200 };
 let inboxState = { rows: [], checkedAt: 0, busy: false };
 
@@ -2854,7 +3000,18 @@ function parseInboxPayload(payload){
     if (d.date > todayStr()){ errors.push(where + ' (' + d.date + '): that\'s in the future.'); return; }
     if (seenDates.has(d.date)){ errors.push(where + ' (' + d.date + '): date appears twice.'); return; }
     seenDates.add(d.date);
-    if (!Array.isArray(d.meals) || !d.meals.length){ errors.push(where + ': no meals.'); return; }
+    // v51: a day may carry the day's calories burned, with or without meals.
+    let burnedKcal = null;
+    if (d.burnedKcal != null){
+      const b = Number(d.burnedKcal);
+      if (typeof d.burnedKcal !== 'number' || !isFinite(b) || b < BURNED_LIMITS[0] || b > BURNED_LIMITS[1]){
+        errors.push(where + ' (' + d.date + '): calories burned must be ' + BURNED_LIMITS[0] + '–' + BURNED_LIMITS[1] + '.'); return;
+      }
+      burnedKcal = Math.round(b);
+    }
+    if (d.meals != null && !Array.isArray(d.meals)){ errors.push(where + ': meals must be a list.'); return; }
+    if (!(d.meals && d.meals.length) && burnedKcal == null){ errors.push(where + ': no meals or calories burned.'); return; }
+    d = Object.assign({}, d, { meals: d.meals || [] });
     if (d.meals.length > INBOX_LIMITS.mealsPerDay){ errors.push(where + ': more than ' + INBOX_LIMITS.mealsPerDay + ' meals.'); return; }
     const meals = [];
     for (let mi = 0; mi < d.meals.length; mi++){
@@ -2872,7 +3029,7 @@ function parseInboxPayload(payload){
       const str = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '');
       meals.push({ name, category: cat.id, time: str(m.time, INBOX_LIMITS.time), notes: str(m.notes, INBOX_LIMITS.mealNotes), items });
     }
-    days.push({ date: d.date, meals });
+    days.push(burnedKcal != null ? { date: d.date, meals, burnedKcal } : { date: d.date, meals });
   });
   return errors.length ? { errors } : { days };
 }
@@ -2924,7 +3081,12 @@ function openInboxReview(){
     } else {
       r.days.forEach(d => {
         const t = d.meals.reduce((a, m) => { const mm = mealMacros(m); return { k: a.k + mm.kcal, p: a.p + mm.proteinG }; }, { k: 0, p: 0 });
-        h += '<div class="food-cat-head"><span>' + esc(fmtLong(d.date)) + '</span><span>' + Math.round(t.k) + ' kcal · ' + Math.round(t.p) + 'g P</span></div>';
+        h += '<div class="food-cat-head"><span>' + esc(fmtLong(d.date)) + '</span><span>' + (d.meals.length ? Math.round(t.k) + ' kcal · ' + Math.round(t.p) + 'g P' : '') + '</span></div>';
+        if (d.burnedKcal != null){
+          const cur = burnedFor(d.date);
+          h += '<div class="food-inbox-meal"><div><b>🔥 Calories burned</b> · ' + fmtKcal(d.burnedKcal) + ' kcal'
+            + (cur != null && cur !== d.burnedKcal ? ' <span class="food-inbox-dup">replaces ' + fmtKcal(cur) + '</span>' : '') + '</div></div>';
+        }
         const existing = (food.mealsByDay && food.mealsByDay[d.date]) || [];
         d.meals.forEach(m => {
           const mm = mealMacros(m);
@@ -2959,8 +3121,10 @@ function inboxAccept(id){
   if (!r || !r.days) return;
   if (((food.inbox && food.inbox.done) || []).includes(id)){ inboxState.rows = inboxState.rows.filter(x => x.id !== id); render(); return; }
   food.mealsByDay = food.mealsByDay || {};
-  let n = 0;
+  let n = 0, burnedDays = 0;
   r.days.forEach(d => {
+    if (d.burnedKcal != null){ setBurned(d.date, d.burnedKcal, 'claude-inbox'); burnedDays++; }
+    if (!d.meals.length) return;              // a burned-only day adds no empty meal list
     const arr = food.mealsByDay[d.date] = food.mealsByDay[d.date] || [];
     d.meals.forEach(m => {
       arr.push({ id: foodUid('m'), name: m.name, category: m.category, time: m.time, notes: m.notes,
@@ -2973,7 +3137,8 @@ function inboxAccept(id){
   inboxState.rows = inboxState.rows.filter(x => x.id !== id);
   deleteInboxRow(id);
   render();                              // the day view and banner behind the sheet are now stale
-  toast('Added ' + n + ' meal' + (n === 1 ? '' : 's'));
+  toast(n || !burnedDays ? 'Added ' + n + ' meal' + (n === 1 ? '' : 's') + (burnedDays ? ' and calories burned' : '')
+                         : 'Calories burned added');
   if (inboxState.rows.length) openInboxReview(); else closeModal();
 }
 function inboxReject(id){
@@ -3603,6 +3768,7 @@ function openRecipeEditor(id){
     ? { id: r.id, name: r.name || '', portions: r.portions, cookedWeightG: r.cookedWeightG != null ? r.cookedWeightG : '',
         ingredients: (r.ingredients || []).map(i => Object.assign({}, i)) }
     : { id: null, name: '', portions: 4, cookedWeightG: '', ingredients: [blankIngredient()] };
+  window._recipeEditor.orig = recipeSnapshot(window._recipeEditor);
   renderRecipeEditor();
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -3781,6 +3947,10 @@ function handleFoodClick(e){
     case 'edit-goals': openGoalsEditor(); break;
     case 'goals-save': goalsSave(); break;
     case 'goals-cancel': window._goalsEditor = null; closeModal(); break;
+    case 'burned-edit': openBurnedEditor(foodDay()); break;
+    case 'burned-save': burnedSave(false); break;
+    case 'burned-clear': burnedSave(true); break;
+    case 'burned-cancel': window._burnedEditor = null; closeModal(); break;
     case 'meal-add-item': mealAddItem(); break;
     case 'meal-remove-item': mealRemoveItem(+el.dataset.index); break;
     case 'meal-save': mealSaveDraft(); break;
@@ -3813,6 +3983,7 @@ function handleFoodInput(e){
   }
   else if (k === 'meal-cat-select'){ mealSetCategory(t.value); }
   else if (k === 'goal-kcal' || k === 'goal-proteinG'){ if (window._goalsEditor) window._goalsEditor[k.slice(5)] = t.value; }
+  else if (k === 'burned-kcal'){ if (window._burnedEditor) window._burnedEditor.kcal = t.value; }
   else if (k === 'recipe-name'){ if (window._recipeEditor) window._recipeEditor.name = t.value; }
   else if (k === 'recipe-portions'){ if (window._recipeEditor) window._recipeEditor.portions = t.value; }
   else if (k === 'recipe-cooked'){ if (window._recipeEditor) window._recipeEditor.cookedWeightG = t.value; }
@@ -4521,6 +4692,12 @@ document.addEventListener('visibilitychange', () => {
 });
 // Claude inbox: look for suggestions on open (throttled to once a minute after that).
 checkInbox();
+// Android back button: see handleBack().
+if (typeof history !== 'undefined' && history.pushState){
+  try { history.replaceState({ bw: 'root' }, ''); } catch (e) {}
+  navGuard();
+  window.addEventListener('popstate', onPopState);
+}
 
 if ('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then(reg => {

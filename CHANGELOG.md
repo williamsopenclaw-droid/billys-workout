@@ -6,6 +6,16 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-09-26 — v51: Android back button, calories burned
+
+**Back button.** William kept pressing Android's back button expecting the previous screen, and it closed the app (an installed web app has no history of its own). Now back steps out of whatever is open, innermost first: a picked search result, the search, an open item card, then the sheet — asking "Discard this meal?" only if the meal was changed. With no sheet open it retraces screens (Workout/Food/Admin, Food tabs, a past food day, a workout day) in reverse. At the first screen it shows "Press back again to close"; a second press within 2 s closes the app. The on-screen "Back to today" / calendar buttons don't make back bounce between two screens. Screen history is session-only, never saved or synced.
+
+**Calories burned.** He tracks energy burned in Samsung Health and wanted it next to what he ate. A web app can't read Samsung Health or Health Connect (Android only exposes them to installed native apps), so there are two ways in, as he chose: tap **🔥 + Add calories burned** on the Day screen and type the day's total, or put "Burned: N" in the daily list and Claude sends it through the inbox (`burnedKcal` on a day, with or without meals; the review sheet shows it and "replaces …" if it changes an existing number). Each day then reads "2,150 eaten · 2,650 burned · 500 under" on the Day screen and in History. Stored in `food.burnedByDay`, synced; older builds keep the field untouched.
+
+Testing notes: the harness gained a `history` stub whose `back()` fires `popstate` like the phone does, and stub elements now track their classes (the old stub always said "no" to `classList.contains`, so nothing could test whether a sheet was open). Tests: 837 assertions; 43 mutations caught from a baseline-verified copy. One mutation survived at first and pointed at dead code (a "restoring" flag that guarded nothing), which was removed; another showed typing into the burned box was never tested, now covered. Browser check at 375px on localhost with Supabase blocked: real back presses through tabs, a food day, the meal editor's discard question and the close-on-second-press; the live row was checked afterwards and holds none of the test data.
+
+---
+
 ## 2026-09-25 — v50: search-first meal editor, custom meal types
 
 William's design, from his notes and the layout he picked: the meal type is a **dropdown** with "＋ Add another…" for his own types (`food.customCategories`, synced; listed after the built-ins everywhere — Day view, History, import, inbox); the **time fills in** for a new meal today (blank on a past day); **search is the main action** (a big search bar, with ✏️ Add manually and 📷 Photo under it); items are **cards** with calories and macros (tap to edit, with labelled fields — previously five tiny unlabelled boxes); a **running total** updates as you type; name and notes fold under **More details**; the photo box only appears after tapping Photo. No empty starter row. A save blocked by a bad number opens the card with the problem. Fits on one phone screen with three items.

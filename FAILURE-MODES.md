@@ -68,6 +68,7 @@
 | 2026-09-24 (v46) | every mutation "caught" | the scratch copy lacked `tools/`, so every run failed on a missing file, not on the mutation |
 | 2026-09-24 (v46) | a mutation missed in the inbox selftest | the fake "leaky" table leaked every way at once, so a blind check was masked by another |
 | 2026-09-25 (v48–v50) | older mutation scripts reported "all caught" | v48's tests started reading `sw.js`, which those scripts didn't copy — every run failed on the missing file. Found in v50 when the scripts gained a baseline check |
+| 2026-09-26 (v51) | the test stub's `classList.contains()` always returned `false` | any code asking "is a sheet open?" could never be tested — a check on it would pass or fail for the stub's reason, not the app's. Stub elements now track their classes |
 
 **Guard:** the suite sets a `finished` flag and fails with `TESTS DID NOT FINISH` if the end isn't reached. For every new behaviour, **break it and watch the suite fail** — build the scratch copy from `git ls-files` (never a hand-picked list), and have the script **exit if the unmutated copy fails** before trying any mutation. Three instances: this is now the standard shape of every mutation script. Fakes that simulate a failure should fail one way at a time. Cross-check "file missing" claims with a second tool before writing them up.
 
