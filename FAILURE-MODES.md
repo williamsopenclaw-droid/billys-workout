@@ -121,6 +121,18 @@
 
 ---
 
+## 9. Tests reaching live systems
+
+**Shape:** a test copy of the app talks to the real backend — often through something that runs automatically *before* the test's stubs are installed (page load, a timer, a service worker).
+
+| When | What |
+|---|---|
+| 2026-09-25 | a browser test put a fake sync code (`bw-000…`) into a `localhost` copy to show the Admin page's sync status. Later reloads ran the open-time sync before `fetch` was stubbed, and created a junk row in William's Supabase. His own row was untouched. |
+
+**Guard:** `isLocalTestCopy()` makes `sbReq` refuse every sync request from `localhost`, `127.0.0.1`, `*.localhost` and `file:` (tested for each, mutation-checked). Never put a real or fake sync code in a browser test copy. When a test *must* touch a live service, use throwaway credentials that can only reach their own data (like the inbox selftest), and clean up after. After any browser session, check the live data for rows or changes you didn't mean to make.
+
+---
+
 ## Pre-ship checklist
 
 1. `node tests/check_syntax.cjs` → `SYNTAX_OK`.
@@ -129,5 +141,5 @@
 4. New save/sync path? A `futureKey` survives it (§1). New UI state? Not in the blob (§3). Change made behind an open sheet? The page behind it re-renders (§2).
 5. `git diff --stat` shows only intended lines; no BOM, no mojibake, no secrets or real `bw-`/`ib-` keys (§5, §7).
 6. `APP_VERSION` (index.html) and `sw.js` VERSION bumped once, to the same value (a test enforces the match).
-7. Browser check at phone width on a `localhost` origin with `fetch` stubbed; console clean. Changed a tab row or label? Measure at 320/375/414 with badges showing (§8).
+7. Browser check at phone width on a `localhost` origin with `fetch` stubbed; console clean. Changed a tab row or label? Measure at 320/375/414 with badges showing (§8). No sync code in the test copy, and nothing new in the live data afterwards (§9).
 8. Commit locally, **report to William, push only on "push"** (`git fetch` first). Then confirm the live `sw.js` and syntax-check the live script.

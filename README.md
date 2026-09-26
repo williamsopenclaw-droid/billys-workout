@@ -19,6 +19,14 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 - **Saved** — one-tap meals you have regularly. ✎ edits one; **+ New saved meal** builds one; **⤓ Import** takes a list Claude prepares.
 - **Recipes** — meal-prep batches. **Log amount…** logs part of a portion or a weight (weigh the whole cooked batch once and enter it under Edit).
 
+### Searching for a food
+In any meal, tap **🔎 Search food** and start typing:
+- **Your foods** — anything you've logged before, with your own numbers (works offline).
+- **Canadian Nutrient File** — Health Canada's plain foods (fruit, vegetables, meat, grains, dairy), with Canadian serving sizes like "1 medium banana" or "250 mL".
+- **Packaged foods** — brands sold in Canada, from Open Food Facts. Anyone can add to it, so a ⚠️ means the numbers don't add up — check the package.
+
+Tap a result, choose grams or a serving size, and tap **Add to meal**. It's added as a normal row you can still edit; nothing is saved until you tap Save.
+
 ### Admin tab
 Sync (status, **Sync now**, and **Sync settings** with your codes), the Claude inbox, **Backup**, **Restore** and the workout **CSV** all live here. If sync needs attention, the tab itself shows 📴 (no connection) or ⚠️ (a problem), so you'll see it from any screen.
 

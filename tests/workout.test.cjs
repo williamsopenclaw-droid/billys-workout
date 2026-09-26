@@ -580,6 +580,185 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
 }
 
 (async()=>{
+  // --- Local test copies never sync (a junk row was created this way on 2026-09-25) ---
+  for (const loc of [{hostname:'localhost',protocol:'http:'},{hostname:'127.0.0.1',protocol:'http:'},{hostname:'',protocol:'file:'},{hostname:'app.localhost',protocol:'http:'}]){
+    const lt=app('2026-09-25');
+    lt.memory.set('caprica_workout_sync_key','bw-'+'0'.repeat(48));
+    lt.memory.set('caprica_workout_sync_meta',JSON.stringify({dirty:true}));
+    lt.run("navigator.onLine=true;window.__sb=[];fetch=async(u)=>{window.__sb.push(String(u));return {ok:true,status:200,json:async()=>[]};};location.hostname="+JSON.stringify(loc.hostname)+";location.protocol="+JSON.stringify(loc.protocol));
+    ok(lt.run("isLocalTestCopy()"));
+    await lt.run("syncNow(false)"); ok(lt.el('toast').textContent.includes('off on local test copies'));
+    await lt.run("sbReq('workout_state').then(()=>'sent',e=>e.message)").then(m=>ok(m.includes('off on local')));
+    await lt.run("resolveConflict('mine')").catch(()=>{});
+    lt.run("window._conflictRemote={updated_at:'t',data:{}}"); await lt.run("resolveConflict('mine')");
+    eq(lt.run("window.__sb.length"),0);                                              // not one request reached Supabase
+  }
+  { const live=app('2026-09-25'); live.run("location.hostname='workout-tracker-app-403.netlify.app';location.protocol='https:'"); ok(!live.run("isLocalTestCopy()")); }
+
+  // --- Food search: app side ---
+  const fx=app('2026-09-25');
+  const tick=()=>new Promise(r=>setImmediate(r));
+  const clickF=(act,data={})=>fx.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+  const typeF=(input,v)=>fx.run("handleFoodInput({target:{dataset:{input:"+JSON.stringify(input)+"},value:"+JSON.stringify(v)+"}})");
+  fx.run("navigator.onLine=true;window.__f=[];window.__failNA=false;"
+    +"window.__cnf=[{food_code:1704,food_description:'Banana, raw'},{food_code:3957,food_description:'Pie, fried, fruit (apple, blueberry, peach, strawberry)'},"
+    +"{food_code:1705,food_description:'Blueberry, raw'},{food_code:842,food_description:'Chicken, broiler, breast, meat, roasted'},{food_code:571,food_description:'Chicken, broiler, giblets, raw'},{food_code:1579,food_description:'Guava, strawberry, raw'},{food_code:1686,food_description:'Strawberry, frozen, sweetened, whole'},{food_code:'x',food_description:5}];"
+    +"window.__na={1704:[{nutrient_name_id:208,nutrient_value:89},{nutrient_name_id:203,nutrient_value:1.09},{nutrient_name_id:205,nutrient_value:22.84},{nutrient_name_id:204,nutrient_value:0.33},{nutrient_name_id:291,nutrient_value:2.6}]};"
+    +"window.__ss={1704:[{measure_name:'1 medium (18-20cm)',conversion_factor_value:1.18},{measure_name:'250ml slices',conversion_factor_value:1.58503},{measure_name:'bad',conversion_factor_value:'x'}]};"
+    +"window.__off=[{code:'0643843714477',name:'Chocolate Protein Shake <img src=x>',brand:'Premier Protein',per100:{kcal:49.2,proteinG:9.2,carbsG:1.2,fatG:0.9},perServing:null,serving:null,suspect:false},"
+    +"{code:'0643843715924',name:'Premier protein',brand:'Premier Protein',per100:{kcal:0.2,proteinG:30,carbsG:5,fatG:3},serving:null,suspect:true},"
+    +"{code:'0000000000123',name:'Shake, per serving only',brand:'',per100:null,perServing:{kcal:160,proteinG:30,carbsG:4,fatG:3},serving:null,suspect:false}];"
+    +"window.__prod={'0643843714477':{code:'0643843714477',name:'Chocolate Protein Shake',brand:'Premier Protein',per100:{kcal:49.2,proteinG:9.2,carbsG:1.2,fatG:0.9},perServing:{kcal:160,proteinG:30,carbsG:4,fatG:3},serving:{label:'1 Shake (325 ml)',grams:325},suspect:false}};"
+    +"fetch=async(u)=>{u=String(u);window.__f.push(u);"
+    +"if(u.startsWith(CNF_API+'/food/'))return {ok:true,status:200,json:async()=>window.__cnf};"
+    +"if(u.includes('/nutrientamount/')){if(window.__failNA)throw new Error('offline');return {ok:true,status:200,json:async()=>window.__na[u.match(/id=(\\d+)/)[1]]||[]};}"
+    +"if(u.includes('/servingsize/'))return {ok:true,status:200,json:async()=>window.__ss[u.match(/id=(\\d+)/)[1]]||[]};"
+    +"if(u.startsWith('/api/food-search?q='))return {ok:true,status:200,json:async()=>({results:window.__off})};"
+    +"if(u.startsWith('/api/food-search?code=')){const p=window.__prod[decodeURIComponent(u.split('code=')[1])];return p?{ok:true,status:200,json:async()=>({product:p})}:{ok:false,status:404,json:async()=>({error:'not_found'})};}"
+    +"throw new Error('unexpected '+u);}");
+  fx.run("addMealToDay('2026-09-24',{id:'m1',name:'Lunch',category:'lunch',items:[{name:'Jasmine rice, cooked',kcal:195,proteinG:4,carbsG:42.3,fatG:0.4,grams:150},{name:'Batch 27',kcal:5}]});"
+    +"addRecipe('Chili',10,[{name:'Turkey, whole batch',kcal:2000,proteinG:300},{name:'Beans',kcal:900,proteinG:60,grams:1600}])");
+  const blobBefore=fx.memory.get('caprica_workout_v2');
+  // The editor offers search; opening it loads Health Canada's list once and shows your recent foods.
+  fx.run("openMealEditor('2026-09-25',null)"); ok(fx.el('modal').innerHTML.includes('data-act="fs-open"'));
+  clickF('fs-open'); await tick(); await tick();
+  const fsd=()=>fx.run("window._mealEditor");
+  eq(fx.run("window._mealEditor.search.cnfStatus"),'ok');
+  eq(fx.run("window.__f.filter(u=>u.includes('/food/?')).length"),1);
+  eq(fx.run("window._mealEditor.search.mine.map(f=>f.name)"),['Jasmine rice, cooked','Batch 27','Beans']);   // no gram-less batch ingredient
+  ok(fx.run("fsResultsHtml(window._mealEditor)").includes('Type 3+ letters'));
+  // Health Canada results: every word must match, and the food-first name ranks top.
+  typeF('fs-q','blueberr'); eq(fx.run("window._mealEditor.search.cnf.map(f=>f[1])"),['Blueberry, raw','Pie, fried, fruit (apple, blueberry, peach, strawberry)']);
+  typeF('fs-q','chicken breast'); eq(fx.run("window._mealEditor.search.cnf.map(f=>f[0])"),[842]);
+  typeF('fs-q','strawberr'); eq(fx.run("window._mealEditor.search.cnf[0][1]"),'Strawberry, frozen, sweetened, whole');   // food-first beats a shorter name
+  typeF('fs-q','rice'); eq(fx.run("window._mealEditor.search.mine.map(f=>f.name)"),['Jasmine rice, cooked']);
+  eq(fx.run("window._mealEditor.search.cnf.length"),0);
+  // Packaged foods: debounced call to the relay; suspect entries flagged; names escaped.
+  typeF('fs-q','premier'); eq(fx.run("window._mealEditor.search.offStatus"),'searching');
+  await fx.run("fsSearchOff(window._mealEditor)");
+  eq(fx.run("window._mealEditor.search.offStatus"),'ok'); eq(fx.run("window._mealEditor.search.off.length"),3);
+  ok(fx.run("window.__f").some(u=>u==='/api/food-search?q=premier'));
+  const offHtml=fx.run("fsResultsHtml(window._mealEditor)");
+  ok(offHtml.includes('⚠️ check label')); ok(!offHtml.includes('<img src=x>')); ok(offHtml.includes('49 kcal · 9.2g P per 100 g'));
+  // Offline: no relay call at all.
+  fx.run("navigator.onLine=false;window.__f=[]"); typeF('fs-q','gatorade'); eq(fx.run("window._mealEditor.search.offStatus"),'offline');
+  ok(!fx.run("window.__f").some(u=>u.startsWith('/api/'))); fx.run("navigator.onLine=true");
+  // Pick a Health Canada food: nutrients per 100 g + its serving sizes; a serving chip sets the amount.
+  typeF('fs-q','banana'); await fx.run("fsPick(window._mealEditor,'cnf',0)");
+  eq(fx.run("window._mealEditor.search.pick.per100"),{kcal:89,proteinG:1.09,carbsG:22.84,fatG:0.33});
+  eq(fx.run("window._mealEditor.search.pick.servings"),[{label:'1 medium (18-20cm)',grams:118},{label:'250ml slices',grams:158.5}]);
+  ok(fx.el('modal').innerHTML.includes('Canadian Nutrient File (Health Canada)'));
+  clickF('fs-serv',{grams:'118'}); eq(fx.run("window._mealEditor.search.pick.amount"),'118');
+  ok(fx.run("fsPreviewHtml(window._mealEditor.search.pick)").startsWith('105 kcal'));
+  clickF('fs-add');
+  eq(fx.run("window._mealEditor.search"),null);
+  eq(fx.run("window._mealEditor.items.map(i=>[i.name,i.kcal,i.proteinG,i.carbsG,i.fatG,i.grams,i.source,i.sourceRef])"),[['Banana, raw',105,1.3,27,0.4,118,'cnf','1704']]);  // blank starter row replaced
+  eq(fx.memory.get('caprica_workout_v2'),blobBefore);                                   // nothing saved yet
+  // Details are cached: picking the same food again doesn't refetch.
+  clickF('fs-open'); await tick(); fx.run("window.__f=[]"); typeF('fs-q','banana'); await fx.run("fsPick(window._mealEditor,'cnf',0)");
+  ok(!fx.run("window.__f").some(u=>u.includes('nutrientamount'))); clickF('fs-back'); ok(fx.el('modal').innerHTML.includes('data-input="fs-q"'));
+  // Packaged pick: the full product gives its serving, which becomes the default amount.
+  typeF('fs-q','premier'); await fx.run("fsSearchOff(window._mealEditor)"); await fx.run("fsPick(window._mealEditor,'off',0)");
+  eq(fx.run("[window._mealEditor.search.pick.amount,window._mealEditor.search.pick.servings[0].label]"),['325','1 serving (1 Shake (325 ml))']);
+  clickF('fs-add');
+  eq(fx.run("window._mealEditor.items[1].name"),'Chocolate Protein Shake <img src=x> (Premier Protein)');
+  eq(fx.run("[window._mealEditor.items[1].kcal,window._mealEditor.items[1].proteinG,window._mealEditor.items[1].source]"),[159.9,29.9,'off']);
+  ok(!fx.el('modal').innerHTML.includes('<img src=x>'));                                // escaped back in the editor too
+  // A suspect product warns on its page; a serving-only product is counted in servings.
+  clickF('fs-open'); await tick(); typeF('fs-q','premier'); await fx.run("fsSearchOff(window._mealEditor)");
+  await fx.run("fsPick(window._mealEditor,'off',1)"); ok(fx.el('modal').innerHTML.includes("These numbers don't add up"));
+  clickF('fs-back'); await fx.run("fsPick(window._mealEditor,'off',2)");
+  eq(fx.run("[window._mealEditor.search.pick.mode,window._mealEditor.search.pick.amount]"),['count','1']);
+  typeF('fs-amount','2'); ok(fx.run("fsPreviewHtml(window._mealEditor.search.pick)").startsWith('320 kcal'));
+  clickF('fs-back');
+  // Your foods scale by weight when a weight was logged…
+  typeF('fs-q','jasmine'); await fx.run("fsPick(window._mealEditor,'mine',0)");
+  typeF('fs-amount','200'); ok(fx.run("fsPreviewHtml(window._mealEditor.search.pick)").startsWith('260 kcal'));
+  clickF('fs-back');
+  // …and by count when it wasn't.
+  typeF('fs-q','batch'); await fx.run("fsPick(window._mealEditor,'mine',0)");
+  eq(fx.run("window._mealEditor.search.pick.mode"),'count'); typeF('fs-amount','3'); ok(fx.run("fsPreviewHtml(window._mealEditor.search.pick)").startsWith('15 kcal'));
+  // Bad amounts are refused with a reason; nothing is added.
+  typeF('fs-q','jasmine'); await fx.run("fsPick(window._mealEditor,'mine',0)");
+  const nItems=fx.run("window._mealEditor.items.length");
+  for (const [v,msg] of [['0','above 0'],['-5','above 0'],['abc','above 0'],['','above 0'],['6000','more than 5000']]){
+    typeF('fs-amount',v); ok(fx.run("fsPreviewHtml(window._mealEditor.search.pick)").includes(msg));
+    clickF('fs-add'); ok(fx.el('toast').textContent.includes(msg));
+  }
+  eq(fx.run("window._mealEditor.items.length"),nItems); ok(fx.run("!!window._mealEditor.search"));
+  // A Health Canada lookup that fails says so and can't be added.
+  fx.run("cnfDetailCache.clear();window.__failNA=true"); typeF('fs-q','banana'); await fx.run("fsPick(window._mealEditor,'cnf',0)");
+  ok(fx.el('modal').innerHTML.includes('Couldn') && fx.run("fsResult(window._mealEditor.search.pick).error").includes('connection'));
+  clickF('fs-add'); eq(fx.run("window._mealEditor.items.length"),nItems); fx.run("window.__failNA=false");
+  // An older packaged search that finishes after a newer one doesn't overwrite it (slow phone connection).
+  clickF('fs-back');
+  fx.run("window.__pend=[];window.__origFetch=fetch;fetch=(u)=>new Promise(res=>window.__pend.push({u:String(u),res}))");
+  typeF('fs-q','older'); const pOld=fx.run("fsSearchOff(window._mealEditor)");
+  typeF('fs-q','newer'); const pNew=fx.run("fsSearchOff(window._mealEditor)");
+  const offReply=name=>"({ok:true,status:200,json:async()=>({results:[{code:'1111111111111',name:'"+name+"',brand:'',per100:{kcal:1,proteinG:0,carbsG:0,fatG:0},suspect:false}]})})";
+  fx.run("window.__pend[1].res("+offReply('NEWER')+")"); await pNew;
+  fx.run("window.__pend[0].res("+offReply('OLDER')+")"); await pOld;
+  eq(fx.run("window._mealEditor.search.off.map(p=>p.name)"),['NEWER']);
+  fx.run("fetch=window.__origFetch");
+  // A packaged search that returns after the search was closed is dropped.
+  clickF('fs-back'); typeF('fs-q','premier'); const late=fx.run("fsSearchOff(window._mealEditor)"); clickF('fs-close'); await late;
+  eq(fx.run("window._mealEditor.search"),null); ok(fx.el('modal').innerHTML.includes('data-act="meal-save"'));
+  // Save: the rows (with their source) go into the log as usual.
+  fx.run("window._mealEditor.name='Snack';mealSaveDraft()");
+  eq(fx.run("food.mealsByDay['2026-09-25'][0].items.map(i=>[i.name,i.source])"),[['Banana, raw','cnf'],['Chocolate Protein Shake <img src=x> (Premier Protein)','off']]);
+  // The Health Canada list is cached on the device (not in the synced blob) and reused.
+  const cache=JSON.parse(fx.memory.get('caprica_workout_v2_cnf')); eq(cache.foods.length,7); ok(!fx.memory.get('caprica_workout_v2').includes('Blueberry, raw'));
+  const fx2=app('2026-09-25'); fx2.memory.set('caprica_workout_v2_cnf',JSON.stringify(cache));
+  fx2.run("window.__f=[];fetch=async(u)=>{window.__f.push(String(u));throw new Error('offline')}");
+  eq(await fx2.run("fsEnsureCnf().then(l=>l.length)"),7); eq(fx2.run("window.__f.length"),0);
+  const stale=Object.assign({},cache,{at:'2026-01-01T00:00:00Z'}); const fx3=app('2026-09-25'); fx3.memory.set('caprica_workout_v2_cnf',JSON.stringify(stale));
+  fx3.run("window.__f=[];fetch=async(u)=>{window.__f.push(String(u));throw new Error('offline')}");
+  eq(await fx3.run("fsEnsureCnf().then(l=>l.length)"),7); eq(fx3.run("window.__f.length"),1);                  // tried to refresh, fell back to stale
+  // The saved-meal editor gets search too.
+  fx.run("openSavedMealEditor(null)"); ok(fx.el('modal').innerHTML.includes('data-act="fs-open"'));
+
+  // --- Food search: the relay ---
+  {
+    const {pathToFileURL}=require('node:url');
+    const fsFn=(await import(pathToFileURL(path.join(__dirname,'..','netlify','functions','food-search.js')).href)).default;
+    const realFetch=global.fetch, realErr=console.error; let calls=[]; const logs=[]; console.error=(...a)=>logs.push(a.join(' '));
+    const route=(handler)=>{ calls=[]; global.fetch=async(u,o={})=>{ calls.push({u:String(u),h:o.headers||{}}); return handler(String(u)); }; };
+    const call=async(qs,method='GET')=>{ const r=await fsFn(new Request('http://x/api/food-search'+qs,{method})); return {status:r.status,cache:r.headers.get('Cache-Control'),json:await r.json()}; };
+    const hit=(o)=>Object.assign({code:'0643843714477',product_name:'Chocolate Protein Shake',brands:'Premier Protein',nutriments:{'energy-kcal_100g':49.2,proteins_100g:9.2,carbohydrates_100g:1.2,fat_100g:0.9}},o);
+    try {
+      route(()=>new Response(JSON.stringify({hits:[hit(),hit(),hit({code:'0643843715924',nutriments:{'energy-kcal_100g':0.2,proteins_100g:30,carbohydrates_100g:5,fat_100g:3}}),
+        hit({code:'1',product_name:'bad code'}),hit({code:'0000000000002',product_name:'',product_name_en:'English name'}),
+        hit({code:'0000000000003',product_name:'Water',nutriments:{'energy-kcal_100g':0,proteins_100g:0,carbohydrates_100g:0,fat_100g:0}}),
+        hit({code:'0000000000004',product_name:'kJ only',nutriments:{energy_100g:418.4,proteins_100g:5,carbohydrates_100g:15,fat_100g:3.1}}),
+        hit({code:'0000000000005',product_name:'Crazy',nutriments:{'energy-kcal_100g':99999,proteins_100g:-3}}),hit({code:'0000000000007',product_name:'One bad number',nutriments:{'energy-kcal_100g':99999,proteins_100g:10,carbohydrates_100g:20,fat_100g:5}}),
+        hit({code:'0000000000006',product_name:'Serving only',nutriments:{'energy-kcal_serving':160,proteins_serving:30,carbohydrates_serving:4,fat_serving:3},serving_quantity:325,serving_size:'1 Shake (325 ml)'})]}),{status:200}));
+      let r=await call('?q='+encodeURIComponent('premier" OR countries_tags:(x)'));
+      eq(r.status,200); ok(r.cache.startsWith('public'));
+      const sentQ=new URL(calls[0].u).searchParams.get('q');
+      ok(sentQ.endsWith(' countries_tags:"en:canada"')); eq(sentQ.replace(' countries_tags:"en:canada"','').replace(/[^"():]/g,''),'');   // user text can't add query syntax
+      ok(calls[0].h['User-Agent'].startsWith('BillysWorkout'));
+      const byCode=Object.fromEntries(r.json.results.map(p=>[p.code,p]));
+      eq(r.json.results.filter(p=>p.code==='0643843714477').length,1); ok(!byCode['1']);                // deduped; bad codes dropped
+      eq([byCode['0643843714477'].suspect,byCode['0643843715924'].suspect,byCode['0000000000003'].suspect],[false,true,false]);
+      eq(byCode['0000000000002'].name,'English name'); eq(byCode['0000000000004'].per100.kcal,100);
+      ok(!byCode['0000000000005']);                                                      // no usable numbers at all: dropped
+      eq([byCode['0000000000007'].per100.kcal,byCode['0000000000007'].per100.proteinG],[null,10]); ok(byCode['0000000000007'].suspect);   // one bad number: blanked and flagged
+      eq(byCode['0000000000006'].per100,{kcal:49.2,proteinG:9.2,carbsG:1.2,fatG:0.9}); eq(byCode['0000000000006'].serving,{label:'1 Shake (325 ml)',grams:325});
+      for (const bad of ['?q=a','?q='+encodeURIComponent('"():'),'?q='+'x'.repeat(81),'','?code=abc','?code=12']){ r=await call(bad); eq(r.status,400); }
+      eq((await call('?q=milk','POST')).status,405);
+      route(()=>new Response('upstream secret detail',{status:503})); r=await call('?q=milk');
+      eq([r.status,r.json.error],[502,'upstream']); ok(!JSON.stringify(r.json).includes('secret'));
+      route(()=>{throw new Error('ECONNRESET')}); eq((await call('?q=milk')).status,502);
+      route(u=>new Response(JSON.stringify({status:1,product:{product_name:'Chocolate Protein Shake',brands:'Premier Protein',serving_size:'1 Shake (325 ml)',serving_quantity:325,nutriments:{'energy-kcal_100g':49.2,proteins_100g:9.2,carbohydrates_100g:1.2,fat_100g:0.9,'energy-kcal_serving':160,proteins_serving:30,carbohydrates_serving:4,fat_serving:3}}}),{status:200}));
+      r=await call('?code=0643843714477');
+      eq([r.status,r.json.product.code,r.json.product.perServing.kcal,r.json.product.serving.grams],[200,'0643843714477',160,325]);
+      ok(calls[0].u.startsWith('https://world.openfoodfacts.org/api/v2/product/0643843714477.json'));
+      route(()=>new Response(JSON.stringify({status:0}),{status:200})); eq((await call('?code=0643843714477')).status,404);
+      route(()=>new Response('nope',{status:404})); eq((await call('?code=0643843714477')).status,404);
+      ok(logs.length>=2 && !logs.join(' ').includes('milk') && !logs.join(' ').includes('secret'));   // failures logged, without the search or upstream body
+    } finally { global.fetch=realFetch; console.error=realErr; }
+  }
+
   // --- Claude inbox: app side ---
   const ib=app('2026-09-24');
   ib.run("navigator.onLine=true;window.__calls=[];window.__rows=[];window.__fail=false;"
@@ -830,5 +1009,5 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, public-site rules, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, food search, public-site rules, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});

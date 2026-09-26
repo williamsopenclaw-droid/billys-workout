@@ -35,7 +35,7 @@ When William pastes a day's list and asks for it to be added:
 2. **Write the day as JSON** (format at the top of `tools/food-inbox.mjs`). Real label or USDA numbers only — **never invent values.** Look labels up online when needed; say where a number came from, and spell out every estimate in the meal's `notes`. Put mL amounts in item names (`grams` is grams). William decides what's estimated vs. left blank; ask when it matters.
 3. `node tools/food-inbox.mjs post day.json --note "Tue Sep 22 - …"`, then `pending` to confirm.
 4. Tell him it's waiting (Food tab banner "📥 N meals from Claude"). **Nothing reaches his log until he taps Accept.**
-5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. If the server doesn't have it, the accepting device was offline: have him open ⚙️ Admin → Sync now, then re-check.
+5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. **Pick his row carefully:** there have been test rows in `workout_state` (a `bw-TES…` row from 2026-08-08 and a `bw-000…` junk row from 2026-09-25 — see Open work), so don't select "the row with an inbox key"; exclude test keys (`sync_key not like 'bw-TES%' and sync_key <> 'bw-' || repeat('0',48)`) or check the latest `device_note` matches his phone. If the server doesn't have it, the accepting device was offline: have him open ⚙️ Admin → Sync now, then re-check.
 
 **Two keys — never mix them up.** The **sync code** (`bw-…`, localStorage `caprica_workout_sync_key`) opens his whole history: never ask for it, never use it, even if it's handed over. The **inbox key** (`ib-…`, `food.inbox.key`, and `BILLYS_INBOX_KEY` on this PC) can only add/read/remove *suggestions* in `food_inbox`. The script reads the key from the environment or the Windows registry; never print it, put it in a URL, or echo it. `node tools/food-inbox.mjs selftest` checks the table's row security with throwaway keys.
 
@@ -61,13 +61,15 @@ When William pastes a day's list and asks for it to be added:
 - **Saved meals:** create / ✎ edit in the meal editor's saved mode; **⤓ Import** takes JSON (format above `parseSavedMealsImport()`), all-or-nothing, replacing same-named meals in place.
 - **Photo estimates:** `POST /api/analyze-food`, authenticated with the device's sync code checked against Supabase (fails closed). Results only ever fill the open editor — **never save an AI result directly.** Env vars on Netlify: `OPENAI_API_KEY` + `OPENAI_BASE_URL` (AI Gateway), optional `FOOD_AI_MODEL`, `FOOD_AI_DISABLED=1` kill switch. Never put a model key in `index.html`.
 - **Admin tab** (`SECTIONS` = workout / food / admin; `renderAdmin()`): Sync status + Sync now / Sync settings, the inbox, Backup / Restore, workout CSV, app version. These used to be header toolbar buttons; the toolbar now only holds Install and the hidden restore file input. Sync problems badge the tab label (`SYNC_BADGE`: 📴 offline, ⚠️ error/conflict) so they're visible from every screen. Switching to Admin is navigation — per-device, never `saveState()`.
+- **Food search** (🔎 in the meal and saved-meal editors; "Food search" block of `index.html`): your foods (from the log, saved meals, and recipe ingredients *with grams*), then Health Canada's **Canadian Nutrient File** (browser calls allowed; the 5,690-name list is cached per device in `caprica_workout_v2_cnf` for 60 days; nutrient ids 208 kcal / 203 protein / 205 carbs / 204 fat per 100 g; serving factors × 100 = grams), then **Open Food Facts, Canada** through `netlify/functions/food-search.js` (`/api/food-search?q=` and `?code=`: strips query syntax, adds the Canada filter, cleans numbers, flags `suspect` entries where kcal ≠ 4P+4C+9F). A pick becomes an editable row with `source` (`mine`/`cnf`/`off`) and `sourceRef`; nothing saves until Save. Older OFF searches can't overwrite newer ones (`fsOffSeq`).
+- **Local test copies never sync.** `isLocalTestCopy()` (localhost, 127.0.0.1, `*.localhost`, `file:`) makes `sbReq` refuse every request. Don't weaken it: a test copy with a fake sync code created a junk Supabase row on 2026-09-25, because the app syncs on page load before any test stub runs (FAILURE-MODES §9).
 - **Claude inbox:** app side in the "Claude inbox" block of `index.html`; the id goes into `food.inbox.done` *before* the row is deleted, so nothing is applied twice; already-handled rows are cleaned up on the next check.
 
 ### Testing and shipping
 
 - `node tests/check_syntax.cjs` and `node tests/workout.test.cjs` before every commit. The suite must print its summary line; `TESTS DID NOT FINISH` (exit 1) means an async test hung.
 - **Break it and watch it fail** for every new behaviour (mutation check in a scratch copy). The scratch copy must include every file the tests import (`tools/`, `netlify/`) and must pass unmutated first — otherwise every mutation "fails" and reads as caught (FAILURE-MODES §4).
-- Browser checks use a separate `http://localhost` origin with `fetch` stubbed, never the live site's data. `file://` previews in the pane have storage disabled.
+- Browser checks use a separate `http://localhost` origin with `fetch` stubbed, never the live site's data. `file://` previews in the pane have storage disabled. **Never put a sync code — real or fake — into a browser test copy**, and remember anything the app does *on page load* happens before your stubs (FAILURE-MODES §9). To clear a test copy's storage, open a non-app file on the same origin (e.g. `/manifest.json`) and use `localStorage` there.
 - **William's standing rule: commit locally, then report** (what changed, files, test results, assumptions, known issues) **and push only when he says "push"** — `git fetch` first, never force-push. Bump the version once per deploy: `APP_VERSION` in `index.html` (the only place it's written there — label, backups and Admin read it) and `VERSION` in `sw.js`. A test fails if they differ. After pushing, confirm the live `sw.js` version and syntax-check the live script.
 - He works in small approved steps ("gates"). Don't start the next piece until he asks.
 
@@ -75,13 +77,14 @@ When William pastes a day's list and asks for it to be added:
 
 ## What this project is
 
-A personal workout and food tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No accounts. Network use: optional Supabase sync (Rule #12), the Claude inbox, and the food-photo Netlify function (see Current state).
+A personal workout and food tracker. Single-file PWA, installed to a phone home screen, works offline, stores everything in `localStorage`. No accounts. Network use: optional Supabase sync (Rule #12), the Claude inbox, food search (Health Canada directly; Open Food Facts via our relay), and the food-photo Netlify function (see Current state).
 
 - `index.html` — **the entire app.** HTML, CSS and JS in one file (~4,000 lines; one `<script>` block).
 - `sw.js` — service worker. Network-first for `index.html`, cache-first for icons, ignores non-GET requests.
 - `manifest.json`, `icon-192.png`, `icon-512.png` — PWA install metadata.
 - `netlify.toml` — publish `.`, no build command, asset processing off, and forced-404 rules that hide everything but the app from the public site. **The test suite fails if a top-level file or folder is neither an app asset nor hidden there** — add new docs/folders to it.
 - `netlify/functions/analyze-food.js` — the food-photo endpoint.
+- `netlify/functions/food-search.js` — the packaged-food search relay (Open Food Facts, Canada).
 - `tools/food-inbox.mjs` — how Claude posts meal suggestions (`post` / `pending` / `selftest`).
 - `supabase/food_inbox.sql` — the inbox table and its row security, as applied.
 - `tests/workout.test.cjs` (the logic suite) and `tests/check_syntax.cjs` (Rule #11 in one command).
@@ -120,6 +123,7 @@ No `package.json`, no bundler. Edit `index.html` directly.
 **localStorage keys** (all on the app's own origin)
 - `caprica_workout_v2` — everything. Historical name; the `v2` is meaningless now, the real version is the `_schemaVersion` field inside. Don't rename it, you'll orphan Billy's data.
 - `caprica_workout_v2_view` — this device's screen/tab (`{section, foodTab}`). Never synced, never in backups; losing it just resets the view.
+- `caprica_workout_v2_cnf` — cached Health Canada food-name list for food search (`{v, at, foods:[[code, name]…]}`, ~290 KB). Per device, never synced, never in backups; refreshed after 60 days; safe to delete.
 - `caprica_workout_sync_key` — the shared secret linking devices. **Never synced and never in the repo**; it's the only thing protecting the row. Same value typed on every device.
 - `caprica_workout_sync_meta` — `{syncedAt, dirty, lastSync}`. `syncedAt` is the server `updated_at` we last agreed with; `dirty` means this device has changes the server hasn't got.
 - `caprica_workout_v2_pre_restore` — written by **Restore** before it overwrites anything, so a wrong file picked on the wrong device is recoverable. Overwritten on each restore; it is a single undo step, not a history.
@@ -278,6 +282,7 @@ If the script block has a syntax error the whole file fails to parse and every g
 ## Open work / known gaps
 
 - **Rotate the sync code** — it appeared in chat on 2026-09-24 (CHANGELOG, v47). William's call when. Rotation = new code on one device, re-link the others, then delete the old `workout_state` row (via the connector, with his OK) so the old code no longer opens a copy of his data.
+- **Test rows in `workout_state`:** `bw-000…` (junk, created 2026-09-25 by a browser test — see FAILURE-MODES §9) and `bw-TES…` (from the 2026-08-08 sync verification). Neither is William's data. Delete them only with his OK.
 - **Supabase advisor:** `public.touch_updated_at` has a mutable `search_path` (pre-existing, low risk, one `alter function` to fix — his call).
 - **Photo estimates are unproven end to end.** The live function rejects unauthenticated calls correctly, but a real photo has only been analysed if William has tried one; whether Netlify AI Gateway supplies the env vars is unverified.
 - **Light-dumbbell rounding** — see Rule #6 (legacy/Travel progression only).
@@ -301,4 +306,4 @@ This machine (William's home Windows box) can push to GitHub directly. Netlify s
 
 ## Recent changes
 
-**The dated history now lives in `CHANGELOG.md`** (newest first). Docs are current through the v48 Admin-tab commit (2026-09-25). Before writing new entries, run `git log --oneline -5` and compare against the top of `CHANGELOG.md` — anything newer is undocumented. Add the new entry to the top of `CHANGELOG.md`, and fold any rule that's still in force into **Current state** above.
+**The dated history now lives in `CHANGELOG.md`** (newest first). Docs are current through the v49 food-search commit (2026-09-25). Before writing new entries, run `git log --oneline -5` and compare against the top of `CHANGELOG.md` — anything newer is undocumented. Add the new entry to the top of `CHANGELOG.md`, and fold any rule that's still in force into **Current state** above.

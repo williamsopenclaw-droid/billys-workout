@@ -6,6 +6,18 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-09-25 — v49: food search, and local test copies can't sync
+
+**Food search.** William used to log food in Samsung Health and wanted its search. 🔎 **Search food** in the meal (and saved-meal) editor searches, in order: **your foods** (every item you've logged, saved, or used as a recipe ingredient with grams — offline, with your own numbers; recent ones show before you type), Health Canada's **Canadian Nutrient File** (5,690 plain foods with Canadian metric serving sizes; no key; the name list is cached per device and searched on the phone; nutrients fetched on pick), and **Open Food Facts, Canada** for packaged brands (through a new relay, `/api/food-search`, because its search blocks browser calls and parses query syntax). He asked for the Canadian source over USDA; CNF needs no key, so there was nothing for him to set up.
+
+Pick → choose grams or a serving chip ("1 medium (18–20 cm) = 118 g", "1 serving (1 Shake (325 ml)) = 325 g") → an editable row with a live macro preview. Nothing saves until Save. Crowd-sourced OFF entries whose calories don't match their macros (one Premier Protein listing claims 0.2 kcal/100 g) are flagged ⚠️; the relay also blanks out-of-range numbers, strips query syntax, adds the Canada filter, and never logs the search text. Verified live: relay against real OFF (Premier Protein, Gatorade Zero, Dempster's), and the app in a real browser against real CNF — "banana" → "Banana, raw" → 1 medium = 105 kcal.
+
+**Incident, and the guard for it.** During the v48 browser test a fake sync code was put into the `localhost` test copy and not removed. The app syncs on page load, before a test can stub `fetch`, so later reloads created a junk row (`bw-000…`) in William's Supabase. His own row was never touched. Now `isLocalTestCopy()` makes every sync request from a local copy fail — FAILURE-MODES §9. The junk row (and an old `bw-TES…` test row) await his OK to delete.
+
+Also: food-search results with equal dates sorted unpredictably (comparator never returned 0) — fixed. Tests: 653 assertions; 33 food-search mutations and 6 guard mutations caught from baseline-verified copies.
+
+---
+
 ## 2026-09-25 — v48: Admin tab
 
 William asked for an Admin tab holding CSV, Backup, Restore and Sync. **⚙️ Admin** joins Workout and Food; the header toolbar keeps only Install (and the hidden restore file input, which stays outside the re-rendered area so it always exists). The page gathers Sync (status, last synced, unsynced changes, Sync now, Sync settings), the Claude inbox (waiting count, Review, Check now), Backup & restore with a one-line explanation of each, the workout CSV (current mode; says food isn't included), and the app version. Every button calls the same function as before.

@@ -368,6 +368,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-ai-notes{margin:0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.4}
 .food-ai-error{font-size:12px;color:var(--red);line-height:1.4}
 .food-ai-tag{grid-column:1/-1;font-size:11px;color:var(--accent);line-height:1.3}
+/* v49: food search */
+.fs-results{margin:10px 0}
+.fs-group{margin-bottom:12px}
+.fs-group h4{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin:0 2px 6px}
+.fs-row{display:block;width:100%;text-align:left;font-family:inherit;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:6px;cursor:pointer;color:var(--text)}
+.fs-row:active{border-color:var(--accent)}
+.fs-name{display:block;font-size:13px;font-weight:600;line-height:1.3}
+.fs-meta{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.fs-warn{color:var(--red);font-weight:600}
+.fs-warn-box{font-size:12px;color:var(--red);background:var(--card);border-radius:8px;padding:8px 10px;margin-bottom:10px;line-height:1.4}
+.fs-empty{font-size:12px;color:var(--muted);padding:4px 2px 8px}
 /* v48: Admin tab. Three top tabs plus a sync badge ("⚙️ Admin ⚠️") ran 10px over
    a 320px phone with the shared 16px padding — tighten on narrow screens only. */
 @media (max-width:380px){ #section-toggle .section-seg{padding:9px 10px;gap:4px} }
@@ -794,7 +805,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -2334,6 +2345,11 @@ function foodRowsError(rows, noun){
   return null;
 }
 
+// An editor row nobody has typed into yet (the starter row). Photo estimates and
+// food search replace it rather than leaving an empty row above what they add.
+function isBlankItem(it){
+  return !(it.name || '').trim() && !['kcal','proteinG','carbsG','fatG','grams'].some(k => it[k] !== '' && it[k] != null && Number(it[k]) !== 0);
+}
 function blankItem(){ return { id: foodUid('i'), name: '', kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, grams: 0 }; }
 function blankIngredient(){ return blankItem(); }
 
@@ -2934,6 +2950,13 @@ function turnOffInbox(){
 function renderMealEditor(){
   const d = window._mealEditor;
   if (!d) return;
+  // Food search takes over the sheet while open; the draft (name, category,
+  // rows) is untouched underneath and comes back on "Back to meal" or "Add".
+  if (d.search){
+    document.getElementById('modal').innerHTML = renderFoodSearch(d);
+    if (!d.search.pick){ const q = document.querySelector('#modal [data-input="fs-q"]'); if (q && q.focus) q.focus(); }
+    return;
+  }
   const saved = d.kind === 'saved';
   let h = saved ? (d.savedId ? '<h2>Edit saved meal</h2><div class="food-hint">Changes apply the next time you log it. Meals already logged stay as they are.</div>'
                              : '<h2>New saved meal</h2><div class="food-hint">A one-tap shortcut. Saving it doesn\'t log anything.</div>')
@@ -2950,7 +2973,8 @@ function renderMealEditor(){
     + '<input class="form-input" data-input="meal-time" placeholder="e.g. 12:30 PM" value="' + esc(d.time) + '"></div>';
   h += '<div class="form-group"><label class="form-label">Items</label><div class="food-editor-items">';
   (d.items || []).forEach((it, i) => { h += renderEditableRow(it, i, 'meal'); });
-  h += '</div><button class="btn btn-secondary" data-act="meal-add-item">+ Add item</button></div>';
+  h += '</div><div class="admin-actions"><button class="btn btn-secondary" data-act="fs-open">🔎 Search food</button>'
+    + '<button class="btn btn-secondary" data-act="meal-add-item">+ Add item</button></div></div>';
   if (!saved) h += '<div class="form-group"><label class="form-label">Notes (optional)</label>'
     + '<input class="form-input" data-input="meal-notes" placeholder="Supplements, water, etc." value="' + esc(d.notes) + '"></div>';
   h += '<button class="btn btn-primary" data-act="meal-save">Save</button>';
@@ -3002,6 +3026,286 @@ function mealSaveDraft(){
   window._mealEditor = null;
   closeModal();
   toast('Meal saved');
+}
+
+// ---- Food search (v49) ----
+// "🔎 Search food" in the meal editor. Three sources, in this order:
+//   1. Your foods — every item already in mealsByDay / savedMeals / recipes. Offline.
+//   2. Canadian Nutrient File (Health Canada) — plain foods. The ~5,700-name list is
+//      fetched once and cached on this device (CNF_LS: never synced, never in a backup);
+//      a food's nutrients and serving sizes are fetched when it's picked. CNF allows
+//      browser calls, so no relay.
+//   3. Open Food Facts, Canada — packaged foods through /api/food-search (a relay; see
+//      netlify/functions/food-search.js). Crowd-sourced, so `suspect` entries are flagged.
+// A pick becomes an ordinary editable item row in the open editor. Nothing is saved
+// until the user taps Save, same as photo estimates and inbox suggestions.
+const CNF_API = 'https://food-nutrition.canada.ca/api/canadian-nutrient-file';
+const CNF_LS = LS_KEY + '_cnf';
+const CNF_MAX_AGE_DAYS = 60;
+const CNF_IDS = { kcal: 208, proteinG: 203, carbsG: 205, fatG: 204 };
+const FS_LIMITS = { grams: 5000, count: 20, perSource: 8, queryMin: 2, offQueryMin: 3 };
+const FS_MACROS = ['kcal', 'proteinG', 'carbsG', 'fatG'];
+let cnfList = null, cnfLoading = null, fsOffTimer = null, fsOffSeq = 0;
+const cnfDetailCache = new Map();
+
+function fsNorm(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function fsTokens(q){ return fsNorm(q).split(/[^a-z0-9%]+/).filter(t => t.length >= 2); }
+// Every query word must appear. Rank names that START with the first word higher
+// (CNF puts the food first — "Blueberry, raw" beats "Pie, fried, fruit (… blueberry …)"),
+// then word-start matches, then shorter names.
+function fsRank(list, q, textOf){
+  const toks = fsTokens(q);
+  if (!toks.length) return [];
+  return list.map(it => {
+    const t = fsNorm(textOf(it));
+    if (!toks.every(k => t.includes(k))) return null;
+    const words = t.split(/[^a-z0-9%]+/).filter(Boolean);
+    let score = words[0] && words[0].startsWith(toks[0]) ? 100 : 0;
+    toks.forEach(k => { if (words.some(w => w.startsWith(k))) score += 10; });
+    return { it, score: score - t.length / 10 };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).map(x => x.it);
+}
+function round1obj(o){ const r = {}; FS_MACROS.forEach(k => { r[k] = foodRound1(foodNum(o && o[k])); }); return r; }
+
+// Your foods: the latest version of each distinct item name you've used.
+function yourFoods(){
+  const byName = new Map();
+  const add = (it, when) => {
+    const name = it && typeof it.name === 'string' ? it.name.replace(/\s+/g, ' ').trim() : '';
+    if (!name || name === 'Item' || name === 'Ingredient') return;
+    const key = fsNorm(name), prev = byName.get(key);
+    if (prev && prev.when >= when) return;
+    byName.set(key, Object.assign({ name, grams: foodNum(it.grams), when }, round1obj(it)));
+  };
+  Object.keys(food.mealsByDay || {}).forEach(ds => (food.mealsByDay[ds] || []).forEach(m => (m.items || []).forEach(it => add(it, ds))));
+  (food.savedMeals || []).forEach(s => (s.items || []).forEach(it => add(it, '0000')));
+  // Recipe ingredients are whole-batch amounts: only useful per gram, so skip ones without grams.
+  (food.recipes || []).forEach(r => (r.ingredients || []).forEach(it => { if (foodNum(it.grams) > 0) add(it, '0000'); }));
+  return [...byName.values()];
+}
+
+async function fsEnsureCnf(){
+  if (cnfList) return cnfList;
+  if (cnfLoading) return cnfLoading;
+  cnfLoading = (async () => {
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(CNF_LS) || 'null'); } catch (e) {}
+    const fresh = cached && Array.isArray(cached.foods) && cached.at && (Date.now() - new Date(cached.at).getTime()) < CNF_MAX_AGE_DAYS * 864e5;
+    if (fresh) return (cnfList = cached.foods);
+    try {
+      const r = await fetch(CNF_API + '/food/?lang=en&type=json');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const foods = (await r.json())
+        .filter(f => f && Number.isInteger(f.food_code) && typeof f.food_description === 'string')
+        .map(f => [f.food_code, f.food_description.slice(0, 160)]);
+      if (!foods.length) throw new Error('empty');
+      try { localStorage.setItem(CNF_LS, JSON.stringify({ v: 1, at: new Date().toISOString(), foods })); } catch (e) { /* quota: keep it in memory only */ }
+      return (cnfList = foods);
+    } catch (e) {
+      if (cached && Array.isArray(cached.foods)) return (cnfList = cached.foods);   // stale beats nothing
+      throw e;
+    }
+  })().finally(() => { cnfLoading = null; });
+  return cnfLoading;
+}
+
+async function cnfDetails(code){
+  if (cnfDetailCache.has(code)) return cnfDetailCache.get(code);
+  const [na, ss] = await Promise.all([
+    fetch(CNF_API + '/nutrientamount/?id=' + code + '&lang=en&type=json').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+    fetch(CNF_API + '/servingsize/?id=' + code + '&lang=en&type=json').then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+  const per100 = {};
+  FS_MACROS.forEach(k => {
+    const e = (Array.isArray(na) ? na : []).find(x => Number(x.nutrient_name_id) === CNF_IDS[k]);
+    const v = e ? Number(e.nutrient_value) : NaN;
+    per100[k] = isFinite(v) && v >= 0 ? v : 0;
+  });
+  const servings = (Array.isArray(ss) ? ss : [])
+    .map(s => ({ label: String(s.measure_name || '').slice(0, 60), grams: Math.round(Number(s.conversion_factor_value) * 1000) / 10 }))
+    .filter(s => s.label && isFinite(s.grams) && s.grams > 0 && s.grams <= FS_LIMITS.grams);
+  const out = { per100, servings };
+  cnfDetailCache.set(code, out);
+  return out;
+}
+
+function openFoodSearch(){
+  const d = window._mealEditor;
+  if (!d) return;
+  d.search = { q: '', mine: [], cnf: [], off: [], cnfStatus: 'loading', offStatus: 'idle', offMessage: '', pick: null };
+  fsCompute(d);
+  renderMealEditor();
+  fsEnsureCnf().then(() => { if (d.search){ d.search.cnfStatus = 'ok'; fsCompute(d); fsRefresh(d); } },
+                     () => { if (d.search){ d.search.cnfStatus = 'error'; fsRefresh(d); } });
+}
+function fsCompute(d){
+  const s = d.search, mine = yourFoods();
+  // With nothing typed, "Your foods" shows what you've had most recently.
+  s.mine = (s.q.trim() ? fsRank(mine, s.q, f => f.name) : mine.slice().sort((a, b) => (b.when > a.when) - (b.when < a.when))).slice(0, FS_LIMITS.perSource);
+  s.cnf = (cnfList && fsTokens(s.q).length) ? fsRank(cnfList, s.q, f => f[1]).slice(0, FS_LIMITS.perSource) : [];
+}
+function fsOnQuery(d, value){
+  const s = d.search;
+  s.q = String(value || '').slice(0, 80);
+  fsCompute(d);
+  clearTimeout(fsOffTimer);
+  if (fsTokens(s.q).join(' ').length < FS_LIMITS.offQueryMin){ s.off = []; s.offStatus = 'idle'; }
+  else if (navigator.onLine === false){ s.off = []; s.offStatus = 'offline'; }
+  else { s.offStatus = 'searching'; fsOffTimer = setTimeout(() => fsSearchOff(d), 450); }
+  fsRefresh(d);
+}
+async function fsSearchOff(d){
+  const s = d.search;
+  if (!s) return;
+  const seq = ++fsOffSeq, q = s.q.trim();
+  let results = [], status = 'ok', message = '';
+  try {
+    const r = await fetch('/api/food-search?q=' + encodeURIComponent(q));
+    let body = null; try { body = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((body && typeof body.message === 'string' && body.message.slice(0, 120)) || 'Packaged-food search is unavailable right now.');
+    results = (body && Array.isArray(body.results) ? body.results : []).slice(0, FS_LIMITS.perSource);
+  } catch (e) {
+    status = 'error';
+    message = e && e.message && !/fetch|network/i.test(e.message) ? e.message : 'Couldn\'t reach packaged-food search.';
+  }
+  if (seq !== fsOffSeq || window._mealEditor !== d || d.search !== s) return;   // a newer search, or the editor moved on
+  s.off = results; s.offStatus = status; s.offMessage = message;
+  fsRefresh(d);
+}
+// Update only the results/preview area, so the search box keeps focus while typing.
+function fsRefresh(d){
+  if (window._mealEditor !== d || !d.search) return;
+  const box = document.getElementById(d.search.pick ? 'fs-preview' : 'fs-results');
+  if (box) box.innerHTML = d.search.pick ? fsPreviewHtml(d.search.pick) : fsResultsHtml(d);
+}
+function fsFmt(m){ return Math.round(foodNum(m.kcal)) + ' kcal · ' + foodRound1(foodNum(m.proteinG)) + 'g P'; }
+function fsResultsHtml(d){
+  const s = d.search;
+  const row = (src, i, title, meta, warn) => '<button class="fs-row" data-act="fs-pick" data-src="' + src + '" data-i="' + i + '">'
+    + '<span class="fs-name">' + esc(title) + '</span><span class="fs-meta">' + esc(meta) + (warn ? ' · <span class="fs-warn">⚠️ check label</span>' : '') + '</span></button>';
+  let h = '';
+  h += '<div class="fs-group"><h4>Your foods</h4>';
+  h += s.mine.length ? s.mine.map((f, i) => row('mine', i, f.name, (f.grams ? f.grams + ' g · ' : '') + fsFmt(f) + (f.when !== '0000' ? ' · ' + fmtShort(f.when) : ''))).join('')
+                     : '<div class="fs-empty">' + (s.q.trim() ? 'Nothing you\'ve logged matches.' : 'Foods you log will show up here.') + '</div>';
+  h += '</div><div class="fs-group"><h4>Canadian Nutrient File</h4>';
+  if (s.cnfStatus === 'loading') h += '<div class="fs-empty">Loading Health Canada\'s food list… (once per device)</div>';
+  else if (s.cnfStatus === 'error') h += '<div class="fs-empty">Couldn\'t load Health Canada\'s food list. Check your connection.</div>';
+  else if (!fsTokens(s.q).length) h += '<div class="fs-empty">Plain foods: fruit, vegetables, meat, grains, dairy…</div>';
+  else h += s.cnf.length ? s.cnf.map((f, i) => row('cnf', i, f[1], 'per 100 g on pick')).join('') : '<div class="fs-empty">No match.</div>';
+  h += '</div><div class="fs-group"><h4>Packaged foods (Open Food Facts)</h4>';
+  if (s.offStatus === 'idle') h += '<div class="fs-empty">Type 3+ letters to search brands sold in Canada.</div>';
+  else if (s.offStatus === 'offline') h += '<div class="fs-empty">📴 Needs a connection.</div>';
+  else if (s.offStatus === 'searching') h += '<div class="fs-empty">Searching…</div>';
+  else if (s.offStatus === 'error') h += '<div class="fs-empty">' + esc(s.offMessage) + '</div>';
+  else h += s.off.length ? s.off.map((p, i) => row('off', i, p.name + (p.brand ? ' — ' + p.brand : ''), p.per100 ? fsFmt(p.per100) + ' per 100 g' : 'per serving', p.suspect)).join('')
+                         : '<div class="fs-empty">No match.</div>';
+  return h + '</div>';
+}
+
+// Picking a result: work out per-100 g values (or a fixed per-unit amount) and
+// the serving sizes on offer, then let the user choose how much.
+async function fsPick(d, src, i){
+  const s = d.search;
+  if (!s) return;
+  if (src === 'mine'){
+    const f = s.mine[i];
+    if (!f) return;
+    s.pick = f.grams > 0
+      ? { src, name: f.name, mode: 'grams', per100: Object.fromEntries(FS_MACROS.map(k => [k, f[k] * 100 / f.grams])), servings: [{ label: 'As logged', grams: f.grams }], amount: String(f.grams) }
+      : { src, name: f.name, mode: 'count', unit: round1obj(f), unitLabel: 'as logged', servings: [], amount: '1' };
+    renderMealEditor();
+    return;
+  }
+  if (src === 'cnf'){
+    const f = s.cnf[i];
+    if (!f) return;
+    s.pick = { src, ref: String(f[0]), name: f[1], mode: 'grams', per100: null, servings: [], amount: '100', loading: true };
+    renderMealEditor();
+    try {
+      const det = await cnfDetails(f[0]);
+      if (s.pick && s.pick.ref === String(f[0])){ Object.assign(s.pick, { per100: det.per100, servings: det.servings, loading: false }); }
+    } catch (e) {
+      if (s.pick && s.pick.ref === String(f[0])) Object.assign(s.pick, { loading: false, error: 'Couldn\'t load this food\'s nutrients. Check your connection.' });
+    }
+    if (window._mealEditor === d && d.search === s) renderMealEditor();
+    return;
+  }
+  if (src === 'off'){
+    const p = s.off[i];
+    if (!p) return;
+    const name = p.name + (p.brand ? ' (' + p.brand + ')' : '');
+    s.pick = { src, ref: p.code, name, mode: p.per100 ? 'grams' : 'count', per100: p.per100, unit: p.perServing, unitLabel: 'serving', servings: [], amount: p.per100 ? '100' : '1', suspect: p.suspect, loading: true };
+    renderMealEditor();
+    try {
+      const r = await fetch('/api/food-search?code=' + encodeURIComponent(p.code));
+      const body = await r.json();
+      const prod = r.ok && body && body.product;
+      if (prod && s.pick && s.pick.ref === p.code){
+        const sv = prod.serving || {};
+        const servings = sv.grams ? [{ label: '1 serving' + (sv.label ? ' (' + sv.label + ')' : ''), grams: sv.grams }] : [];
+        Object.assign(s.pick, { per100: prod.per100 || s.pick.per100, unit: prod.perServing || s.pick.unit, unitLabel: sv.label || 'serving', servings, suspect: prod.suspect });
+        if (s.pick.per100 && servings.length) s.pick.amount = String(servings[0].grams);
+        s.pick.mode = s.pick.per100 ? 'grams' : 'count';
+      }
+    } catch (e) { /* keep the per-100 g values from the search result */ }
+    if (s.pick && s.pick.ref === p.code) s.pick.loading = false;
+    if (window._mealEditor === d && d.search === s) renderMealEditor();
+  }
+}
+// → { item } or { error }. Values are always finite and ≥ 0.
+function fsResult(p){
+  if (!p || p.loading) return { error: 'Loading…' };
+  if (p.error) return { error: p.error };
+  const n = Number(p.amount);
+  if (p.amount === '' || !isFinite(n) || n <= 0) return { error: p.mode === 'grams' ? 'Enter grams above 0' : 'Enter an amount above 0' };
+  if (p.mode === 'grams' && n > FS_LIMITS.grams) return { error: 'That\'s more than ' + FS_LIMITS.grams + ' g' };
+  if (p.mode === 'count' && n > FS_LIMITS.count) return { error: 'That\'s more than ' + FS_LIMITS.count };
+  const base = p.mode === 'grams' ? p.per100 : p.unit;
+  if (!base) return { error: 'No nutrition data for this food.' };
+  const f = p.mode === 'grams' ? n / 100 : n;
+  const item = { id: foodUid('i'), name: p.name.slice(0, 80), grams: p.mode === 'grams' ? foodRound1(n) : 0, source: p.src };
+  FS_MACROS.forEach(k => { const v = Number(base[k]) * f; item[k] = isFinite(v) && v >= 0 ? foodRound1(v) : 0; });
+  if (p.ref) item.sourceRef = p.ref;
+  return { item };
+}
+function fsPreviewHtml(p){
+  const r = fsResult(p);
+  return r.error ? '<span class="food-log-err">' + esc(r.error) + '</span>'
+    : Math.round(r.item.kcal) + ' kcal · ' + r.item.proteinG + 'g P · ' + r.item.carbsG + 'g C · ' + r.item.fatG + 'g F';
+}
+function renderFoodSearch(d){
+  const s = d.search, p = s.pick;
+  if (!p){
+    return '<h2>🔎 Search food</h2>'
+      + '<input class="form-input" data-input="fs-q" placeholder="e.g. banana, chicken breast, Premier Protein" value="' + esc(s.q) + '" autocomplete="off">'
+      + '<div id="fs-results" class="fs-results">' + fsResultsHtml(d) + '</div>'
+      + '<button class="btn btn-secondary" data-act="fs-close">← Back to meal</button>';
+  }
+  const srcLabel = { mine: 'Your foods', cnf: 'Canadian Nutrient File (Health Canada)', off: 'Open Food Facts — crowd-sourced; check against the label' }[p.src];
+  let h = '<h2>' + esc(p.name) + '</h2><div class="food-hint">' + esc(srcLabel) + '</div>';
+  if (p.suspect) h += '<div class="fs-warn-box">⚠️ These numbers don\'t add up (calories vs protein, carbs and fat). Check the package before adding.</div>';
+  if (p.loading) h += '<div class="fs-empty">Loading nutrients…</div>';
+  if (p.per100 && p.mode === 'grams') h += '<div class="admin-line">Per 100 g: ' + esc(fsFmt(p.per100)) + ' · ' + foodRound1(foodNum(p.per100.carbsG)) + 'g C · ' + foodRound1(foodNum(p.per100.fatG)) + 'g F</div>';
+  if (p.servings.length){
+    h += '<div class="food-cat-chips" style="margin-bottom:10px">' + p.servings.map(sv =>
+      '<button class="food-cat-chip' + (String(sv.grams) === p.amount ? ' active' : '') + '" data-act="fs-serv" data-grams="' + sv.grams + '">' + esc(sv.label) + ' · ' + sv.grams + ' g</button>').join('') + '</div>';
+  }
+  h += '<div class="form-group"><label class="form-label">' + (p.mode === 'grams' ? 'Amount (g)' : 'How many (' + esc(p.unitLabel || 'servings') + ')') + '</label>'
+    + '<input class="form-input" type="number" inputmode="decimal" step="any" data-input="fs-amount" value="' + esc(p.amount) + '"></div>';
+  h += '<div class="food-log-preview" id="fs-preview">' + fsPreviewHtml(p) + '</div>';
+  h += '<button class="btn btn-primary" data-act="fs-add">Add to meal</button>';
+  h += '<button class="btn btn-secondary" data-act="fs-back">← Back to results</button>';
+  return h;
+}
+function fsAdd(d){
+  const s = d && d.search;
+  if (!s || !s.pick) return;
+  const r = fsResult(s.pick);
+  if (r.error){ toast('⚠️ ' + r.error); return; }
+  d.items = (d.items || []).filter(it => !isBlankItem(it)).concat([r.item]);
+  d.search = null;
+  renderMealEditor();
+  toast('Added ' + r.item.name);
 }
 
 // ---- AI photo estimate (v40, Gate 3) ----
@@ -3104,8 +3408,7 @@ function applyAiResult(d, result){
     notes: str(i && i.notes, 200)
   }));
   // Replace the untouched starter row; otherwise add to what's already there.
-  const blank = it => !(it.name || '').trim() && !['kcal','proteinG','carbsG','fatG','grams'].some(k => it[k] !== '' && it[k] != null && Number(it[k]) !== 0);
-  const kept = (d.items || []).filter(it => !blank(it));
+  const kept = (d.items || []).filter(it => !isBlankItem(it));
   d.items = kept.concat(rows);
   d.aiUsed = true;
   const list = v => (Array.isArray(v) ? v : []).map(s => str(s, 200)).filter(Boolean).slice(0, 8);
@@ -3308,6 +3611,16 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'new-saved-meal': openSavedMealEditor(null); break;
+    case 'fs-open': openFoodSearch(); break;
+    case 'fs-close': if (window._mealEditor){ window._mealEditor.search = null; renderMealEditor(); } break;
+    case 'fs-pick': if (window._mealEditor && window._mealEditor.search) fsPick(window._mealEditor, el.dataset.src, +el.dataset.i); break;
+    case 'fs-back': if (window._mealEditor && window._mealEditor.search){ window._mealEditor.search.pick = null; renderMealEditor(); } break;
+    case 'fs-serv':
+      if (window._mealEditor && window._mealEditor.search && window._mealEditor.search.pick){
+        window._mealEditor.search.pick.amount = String(el.dataset.grams); renderMealEditor();
+      }
+      break;
+    case 'fs-add': fsAdd(window._mealEditor); break;
     case 'admin-sync-now': syncNow(false); break;
     case 'admin-sync-settings': openSyncModal(); break;
     case 'admin-backup': exportBackup(); break;
@@ -3365,6 +3678,8 @@ function handleFoodInput(e){
   if (k === 'meal-name'){ if (window._mealEditor) window._mealEditor.name = t.value; }
   else if (k === 'meal-time'){ if (window._mealEditor) window._mealEditor.time = t.value; }
   else if (k === 'meal-notes'){ if (window._mealEditor) window._mealEditor.notes = t.value; }
+  else if (k === 'fs-q'){ const d = window._mealEditor; if (d && d.search) fsOnQuery(d, t.value); }
+  else if (k === 'fs-amount'){ const d = window._mealEditor; if (d && d.search && d.search.pick){ d.search.pick.amount = t.value; fsRefresh(d); } }
   else if (k === 'meal-ai-desc'){ const d = window._mealEditor; if (d){ d.ai = d.ai || {}; d.ai.desc = t.value; } }
   else if (k.indexOf('item-') === 0){
     const it = window._mealEditor && window._mealEditor.items && window._mealEditor.items[idx];
@@ -3566,7 +3881,18 @@ function setSyncStatus(status, detail){
 }
 const SYNC_BADGE = { offline: '📴', error: '⚠️', conflict: '⚠️' };
 
+// A copy of the app served from this computer (localhost, or a file) is a test
+// copy: it must never read or write the real sync row. On 2026-09-25 a browser
+// test left a fake sync code in a localhost copy, the app synced on page load
+// (before any test stub could run) and created a junk row in Supabase. Every sync
+// request goes through sbReq, so this is the one place the guard can't be missed.
+function isLocalTestCopy(){
+  const h = (typeof location !== 'undefined' && location.hostname) || '';
+  const p = (typeof location !== 'undefined' && location.protocol) || '';
+  return p === 'file:' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost');
+}
 function sbReq(path, opts){
+  if (isLocalTestCopy()) return Promise.reject(new Error('Sync is off on local test copies'));
   const o = opts || {};
   return fetch(SB_URL + '/rest/v1/' + path, Object.assign({}, o, {
     headers: Object.assign({
@@ -3644,6 +3970,7 @@ function scheduleSync(){
 
 async function syncNow(silent){
   if (!syncKey()){ if (!silent) toast('Set up sync first'); return; }
+  if (isLocalTestCopy()){ setSyncStatus('idle'); if (!silent) toast('Sync is off on local test copies'); return; }
   if (syncBusy) return;
   if (navigator.onLine === false){ setSyncStatus('offline'); if (!silent) toast('📴 Offline'); return; }
   syncBusy = true; setSyncStatus('syncing');
