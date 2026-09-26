@@ -525,6 +525,60 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   for (const a of APP) ok(!hidden.has(a));                                           // and the app itself is never hidden
 }
 
+// --- Admin tab ---
+{
+  const ad=app('2026-09-25');
+  const clickA=(act,data={})=>ad.run("(()=>{const e={dataset:"+JSON.stringify({act,...data})+"};e.closest=()=>e;handleFoodClick({target:e});})()");
+  // The app's version and the service worker's must match (they're bumped together).
+  const swVersion=fs.readFileSync(path.join(__dirname,'..','sw.js'),'utf8').match(/VERSION = '([^']+)'/)[1];
+  eq(ad.run("APP_VERSION"),swVersion);
+  // The header toolbar no longer carries the data buttons; the Admin tab exists.
+  const toolbar=html.slice(html.indexOf('<div class="toolbar">'),html.indexOf('<div class="view-bar"'));
+  for (const f of ['exportCSV()','exportBackup()','openSyncModal()',"'restore-file').click()"]) ok(!toolbar.includes(f));
+  ok(toolbar.includes('id="restore-file"')); ok(toolbar.includes('id="install-btn"'));
+  ok(html.includes('data-section="admin" id="admin-seg"'));
+  // Switching to Admin is navigation: remembered per device, never saved or synced.
+  ad.memory.set('caprica_workout_sync_key','bw-'+'0'.repeat(48));
+  ad.memory.set('caprica_workout_sync_meta',JSON.stringify({syncedAt:'t1',dirty:false,lastSync:'2026-09-25T10:00:00'}));
+  const blobA=ad.memory.get('caprica_workout_v2');
+  ad.run("switchSection('admin')");
+  eq(ad.run("viewState.section"),'admin');
+  eq(ad.memory.get('caprica_workout_v2'),blobA); eq(JSON.parse(ad.memory.get('caprica_workout_sync_meta')).dirty,false);
+  eq(JSON.parse(ad.memory.get('caprica_workout_v2_view')).section,'admin');
+  const reopened=app('2026-09-25'); reopened.memory.set('caprica_workout_v2_view',JSON.stringify({section:'admin',foodTab:'today'})); reopened.run("loadState()");
+  eq(reopened.run("viewState.section"),'admin');
+  ad.run("switchSection('nonsense')"); eq(ad.run("viewState.section"),'admin');
+  // The page: sync status, inbox, backup/restore, export, version.
+  const page=ad.el('workout-container').innerHTML;
+  for (const s of ['☁️ Sync','Sync now','Sync settings','📥 Claude inbox','💾 Backup','♻️ Restore','📥 Workout CSV','Unsynced changes on this device: <b>no</b>','App version '+swVersion,'<div class="ver">'+swVersion+' · Admin'])
+    ok(page.includes(s));
+  ok(page.includes('Gym</b>')===false && page.includes('your Gym workouts'));
+  // Without sync: an invitation to set it up instead of status.
+  const noSync=app('2026-09-25'); noSync.run("switchSection('admin')");
+  ok(noSync.el('workout-container').innerHTML.includes('Set up sync')); ok(!noSync.el('workout-container').innerHTML.includes('Sync now'));
+  // Sync problems show on the Admin tab label from anywhere, and on the page; details are escaped.
+  ad.run("setSyncStatus('offline')"); ok(ad.el('admin-seg').textContent.includes('📴'));
+  ad.run("setSyncStatus('error','<img src=x>')"); ok(ad.el('admin-seg').textContent.includes('⚠️'));
+  ok(ad.el('workout-container').innerHTML.includes('Last attempt failed: &lt;img')); ok(!ad.el('workout-container').innerHTML.includes('<img src=x>'));
+  ad.run("setSyncStatus('ok')"); eq(ad.el('admin-seg').textContent,'⚙️ Admin');
+  ad.run("switchSection('food');setSyncStatus('conflict')"); ok(ad.el('admin-seg').textContent.includes('⚠️'));
+  ok(!ad.el('workout-container').innerHTML.includes('Claude inbox'));                  // didn't redraw Admin over Food
+  ad.run("switchSection('admin');setSyncStatus('ok')");
+  // Unsynced changes and a stale sync are shown.
+  ad.memory.set('caprica_workout_sync_meta',JSON.stringify({syncedAt:'t1',dirty:true,lastSync:'2026-09-01T10:00:00'}));
+  ad.run("render()"); ok(ad.el('workout-container').innerHTML.includes('Unsynced changes on this device: <b>yes</b>'));
+  ok(ad.el('workout-container').innerHTML.includes('over a week ago'));
+  // Inbox card reflects waiting suggestions.
+  ad.run("food.inbox={key:'ib-'+'e'.repeat(48)};inboxState.rows=[{id:'q1',days:[]},{id:'q2',days:[]}];render()");
+  ok(ad.el('workout-container').innerHTML.includes('<b>2 suggestions</b> waiting')); ok(ad.el('workout-container').innerHTML.includes('data-act="inbox-review"'));
+  ad.run("inboxState.rows=[]");
+  // Every button reaches the same function as before.
+  ad.run("window.__hit=[];syncNow=()=>window.__hit.push('sync');openSyncModal=()=>window.__hit.push('settings');exportBackup=()=>window.__hit.push('backup');exportCSV=()=>window.__hit.push('csv')");
+  ad.el('restore-file').click=()=>ad.run("window.__hit.push('restore')");
+  for (const a of ['admin-sync-now','admin-sync-settings','admin-backup','admin-restore','admin-csv']) clickA(a);
+  eq(JSON.parse(JSON.stringify(ad.run("window.__hit"))),['sync','settings','backup','restore','csv']);
+}
+
 (async()=>{
   // --- Claude inbox: app side ---
   const ib=app('2026-09-24');
@@ -776,5 +830,5 @@ clickI('import-cancel'); eq(im.run("window._importSaved"),null);
   // Photos are never kept: nothing image-like in saved state.
   ok(!p.memory.get('caprica_workout_v2').includes('data:image'));
   finished=true;
-  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, public-site rules, photo function and photo flow.');
+  console.log(checks+' assertions passed: scheduling, history, travel, ramp, progression, storage, migration, rendering, food, any-day food, meal categories, goals, recipe portions, saved-meal editing, saved-meal import, Claude inbox, sync-merge, navigation, admin tab, public-site rules, photo function and photo flow.');
 })().catch(e=>{console.error(e);process.exit(1);});

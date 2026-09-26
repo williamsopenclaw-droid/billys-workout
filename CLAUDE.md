@@ -35,7 +35,7 @@ When William pastes a day's list and asks for it to be added:
 2. **Write the day as JSON** (format at the top of `tools/food-inbox.mjs`). Real label or USDA numbers only — **never invent values.** Look labels up online when needed; say where a number came from, and spell out every estimate in the meal's `notes`. Put mL amounts in item names (`grams` is grams). William decides what's estimated vs. left blank; ask when it matters.
 3. `node tools/food-inbox.mjs post day.json --note "Tue Sep 22 - …"`, then `pending` to confirm.
 4. Tell him it's waiting (Food tab banner "📥 N meals from Claude"). **Nothing reaches his log until he taps Accept.**
-5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. If the server doesn't have it, the accepting device was offline: have him open ☁️ Sync → Sync now, then re-check.
+5. After he accepts, **verify on the server** (meal count and kcal per day in `workout_state`) and that `pending` is empty. If the server doesn't have it, the accepting device was offline: have him open ⚙️ Admin → Sync now, then re-check.
 
 **Two keys — never mix them up.** The **sync code** (`bw-…`, localStorage `caprica_workout_sync_key`) opens his whole history: never ask for it, never use it, even if it's handed over. The **inbox key** (`ib-…`, `food.inbox.key`, and `BILLYS_INBOX_KEY` on this PC) can only add/read/remove *suggestions* in `food_inbox`. The script reads the key from the environment or the Windows registry; never print it, put it in a URL, or echo it. `node tools/food-inbox.mjs selftest` checks the table's row security with throwaway keys.
 
@@ -60,6 +60,7 @@ When William pastes a day's list and asks for it to be added:
 - **Recipes:** `ing.portions` lets one ingredient divide differently (rice made 7 of 8); `r.cookedWeightG` enables logging by grams. Logged meals record `meal.recipe`.
 - **Saved meals:** create / ✎ edit in the meal editor's saved mode; **⤓ Import** takes JSON (format above `parseSavedMealsImport()`), all-or-nothing, replacing same-named meals in place.
 - **Photo estimates:** `POST /api/analyze-food`, authenticated with the device's sync code checked against Supabase (fails closed). Results only ever fill the open editor — **never save an AI result directly.** Env vars on Netlify: `OPENAI_API_KEY` + `OPENAI_BASE_URL` (AI Gateway), optional `FOOD_AI_MODEL`, `FOOD_AI_DISABLED=1` kill switch. Never put a model key in `index.html`.
+- **Admin tab** (`SECTIONS` = workout / food / admin; `renderAdmin()`): Sync status + Sync now / Sync settings, the inbox, Backup / Restore, workout CSV, app version. These used to be header toolbar buttons; the toolbar now only holds Install and the hidden restore file input. Sync problems badge the tab label (`SYNC_BADGE`: 📴 offline, ⚠️ error/conflict) so they're visible from every screen. Switching to Admin is navigation — per-device, never `saveState()`.
 - **Claude inbox:** app side in the "Claude inbox" block of `index.html`; the id goes into `food.inbox.done` *before* the row is deleted, so nothing is applied twice; already-handled rows are cleaned up on the next check.
 
 ### Testing and shipping
@@ -67,7 +68,7 @@ When William pastes a day's list and asks for it to be added:
 - `node tests/check_syntax.cjs` and `node tests/workout.test.cjs` before every commit. The suite must print its summary line; `TESTS DID NOT FINISH` (exit 1) means an async test hung.
 - **Break it and watch it fail** for every new behaviour (mutation check in a scratch copy). The scratch copy must include every file the tests import (`tools/`, `netlify/`) and must pass unmutated first — otherwise every mutation "fails" and reads as caught (FAILURE-MODES §4).
 - Browser checks use a separate `http://localhost` origin with `fetch` stubbed, never the live site's data. `file://` previews in the pane have storage disabled.
-- **William's standing rule: commit locally, then report** (what changed, files, test results, assumptions, known issues) **and push only when he says "push"** — `git fetch` first, never force-push. Bump `sw.js` once per deploy, together with the version label in `render()` and `appVersion` in `exportBackup()`. After pushing, confirm the live `sw.js` version and syntax-check the live script.
+- **William's standing rule: commit locally, then report** (what changed, files, test results, assumptions, known issues) **and push only when he says "push"** — `git fetch` first, never force-push. Bump the version once per deploy: `APP_VERSION` in `index.html` (the only place it's written there — label, backups and Admin read it) and `VERSION` in `sw.js`. A test fails if they differ. After pushing, confirm the live `sw.js` version and syntax-check the live script.
 - He works in small approved steps ("gates"). Don't start the next piece until he asks.
 
 ---
@@ -289,7 +290,7 @@ Resolved items that used to live here are recorded in `CHANGELOG.md`.
 
 ## Deploying
 
-1. Edit `index.html`; bump `sw.js` VERSION (Rule #10) together with the version label in `render()` and `appVersion` in `exportBackup()`.
+1. Edit `index.html`; bump `APP_VERSION` there and `VERSION` in `sw.js` to the same value (Rule #10 — a test fails if they differ).
 2. `node tests/check_syntax.cjs` and `node tests/workout.test.cjs`.
 3. Commit locally and **report to William**; push to `main` only when he says "push" (`git fetch` first).
 4. Netlify publishes in under a minute. Confirm the live `sw.js` VERSION and syntax-check the live script.
@@ -300,4 +301,4 @@ This machine (William's home Windows box) can push to GitHub directly. Netlify s
 
 ## Recent changes
 
-**The dated history now lives in `CHANGELOG.md`** (newest first). Docs are current through the v47 docs commit (2026-09-24). Before writing new entries, run `git log --oneline -5` and compare against the top of `CHANGELOG.md` — anything newer is undocumented. Add the new entry to the top of `CHANGELOG.md`, and fold any rule that's still in force into **Current state** above.
+**The dated history now lives in `CHANGELOG.md`** (newest first). Docs are current through the v48 Admin-tab commit (2026-09-25). Before writing new entries, run `git log --oneline -5` and compare against the top of `CHANGELOG.md` — anything newer is undocumented. Add the new entry to the top of `CHANGELOG.md`, and fold any rule that's still in force into **Current state** above.

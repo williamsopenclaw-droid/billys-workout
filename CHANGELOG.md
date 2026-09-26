@@ -6,6 +6,18 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-09-25 — v48: Admin tab
+
+William asked for an Admin tab holding CSV, Backup, Restore and Sync. **⚙️ Admin** joins Workout and Food; the header toolbar keeps only Install (and the hidden restore file input, which stays outside the re-rendered area so it always exists). The page gathers Sync (status, last synced, unsynced changes, Sync now, Sync settings), the Claude inbox (waiting count, Review, Check now), Backup & restore with a one-line explanation of each, the workout CSV (current mode; says food isn't included), and the app version. Every button calls the same function as before.
+
+Moving the Sync button would have hidden sync problems, so `setSyncStatus()` now badges the tab label (📴 offline, ⚠️ error/conflict) and redraws the Admin page when it's open. Navigation rules unchanged: Admin is per-device view state.
+
+`APP_VERSION` is now the one place the version is written in `index.html` (label, backup `appVersion`, Admin), and a test fails if it differs from `sw.js`.
+
+Found in browser testing and fixed: with a badge showing, the three top tabs ran 10px past a 320px phone — narrow screens now get tighter padding (FAILURE-MODES §8). Tests: 542 assertions; 13 Admin mutations caught from a baseline-verified scratch copy; Gate 1a/2 mutations re-run, all caught.
+
+---
+
 ## 2026-09-24 — docs split, and the public site limited to the app
 
 - **Docs:** CLAUDE.md was ~60 KB, mostly dated entries. The history moved here (newest first); rules still in force were condensed into CLAUDE.md's new **Current state** section. A line-by-line check confirmed every old line is either carried over verbatim or deliberately rewritten (stale facts corrected: "no database", Rule #11's script line numbers, the "can't push from here" deploy note). New: **README.md** (William's plain-language guide) and **FAILURE-MODES.md** (repeat bugs by shape, with a pre-ship checklist).

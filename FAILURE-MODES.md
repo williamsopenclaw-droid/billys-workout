@@ -108,6 +108,19 @@
 
 ---
 
+## 8. Tab bars too wide for small phones
+
+**Shape:** a row of tabs sized to its content, with generous padding, fits a desktop or a 375px phone but overflows a narrower one — often only when a longer label (a badge, a count) appears.
+
+| When | Where | Symptom |
+|---|---|---|
+| 2026-09-23 (v42) | the four Food tabs used the Workout/Food switch's 16px padding | "Recipes" clipped by ~10px at 375px |
+| 2026-09-25 (v48) | three top tabs with the "⚙️ Admin ⚠️" sync badge | 10px over at 320px |
+
+**Guard:** measure in the browser at 320, 375 and 414px **with the longest label the tab can show** (badges on), checking the bar's `scrollWidth <= clientWidth`. Narrow screens get tighter padding via a media query; don't shrink everyone's tabs to fix the smallest phone.
+
+---
+
 ## Pre-ship checklist
 
 1. `node tests/check_syntax.cjs` → `SYNTAX_OK`.
@@ -115,6 +128,6 @@
 3. Every new behaviour mutation-checked, from a scratch copy that passes unmutated (§4).
 4. New save/sync path? A `futureKey` survives it (§1). New UI state? Not in the blob (§3). Change made behind an open sheet? The page behind it re-renders (§2).
 5. `git diff --stat` shows only intended lines; no BOM, no mojibake, no secrets or real `bw-`/`ib-` keys (§5, §7).
-6. `sw.js` VERSION bumped once, with the app label and `appVersion`.
-7. Browser check at phone width on a `localhost` origin with `fetch` stubbed; console clean.
+6. `APP_VERSION` (index.html) and `sw.js` VERSION bumped once, to the same value (a test enforces the match).
+7. Browser check at phone width on a `localhost` origin with `fetch` stubbed; console clean. Changed a tab row or label? Measure at 320/375/414 with badges showing (§8).
 8. Commit locally, **report to William, push only on "push"** (`git fetch` first). Then confirm the live `sw.js` and syntax-check the live script.

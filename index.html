@@ -22,7 +22,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .header{text-align:center;padding:20px 0 4px}
 .header h1{font-size:20px;font-weight:700;letter-spacing:-0.5px}
 .header p{font-size:12px;color:var(--muted);margin-top:2px}
-.toolbar{display:flex;justify-content:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.toolbar{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.toolbar .install-btn:not(.hidden){margin-bottom:12px}  /* the toolbar is otherwise empty since v48 — no gap */
 .install-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;background:var(--green);border:none;border-radius:10px;color:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s;box-shadow:0 2px 8px rgba(74,222,128,0.3)}
 .install-btn:active{opacity:.85;transform:scale(0.97)}
 .install-btn.hidden{display:none}
@@ -367,6 +368,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-ai-notes{margin:0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.4}
 .food-ai-error{font-size:12px;color:var(--red);line-height:1.4}
 .food-ai-tag{grid-column:1/-1;font-size:11px;color:var(--accent);line-height:1.3}
+/* v48: Admin tab. Three top tabs plus a sync badge ("⚙️ Admin ⚠️") ran 10px over
+   a 320px phone with the shared 16px padding — tighten on narrow screens only. */
+@media (max-width:380px){ #section-toggle .section-seg{padding:9px 10px;gap:4px} }
+.admin-card{background:var(--surface);border-radius:12px;padding:14px;margin-bottom:12px}
+.admin-card h3{font-size:15px;margin:0 0 8px}
+.admin-line{font-size:13px;color:var(--muted);margin-bottom:8px;line-height:1.45}
+.admin-line b{color:var(--text)}
+.admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.admin-actions .btn{flex:1 1 130px;margin:0}
 /* v41: recipe partial portions */
 .food-ing-portions{grid-column:1/-1;font-size:12px}
 .food-log-preview{background:var(--card);border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center}
@@ -385,15 +395,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
     <div class="section-toggle-inner" id="section-toggle">
       <button class="section-seg active" data-section="workout" onclick="switchSection('workout')">🏋️ Workout</button>
       <button class="section-seg" data-section="food" onclick="switchSection('food')">🥗 Food</button>
+      <button class="section-seg" data-section="admin" id="admin-seg" onclick="switchSection('admin')">⚙️ Admin</button>
     </div>
   </div>
 
+  <!-- CSV / Backup / Restore / Sync moved to the Admin tab (v48). The restore
+       picker stays here, outside the re-rendered area, so it always exists. -->
   <div class="toolbar">
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">📲 Install App</button>
-    <button class="tool-btn" onclick="exportCSV()">📥 CSV</button>
-    <button class="tool-btn" onclick="exportBackup()">💾 Backup</button>
-    <button class="tool-btn" onclick="document.getElementById('restore-file').click()">♻️ Restore</button>
-    <button class="tool-btn" id="sync-btn" onclick="openSyncModal()">☁️ Sync</button>
     <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
   </div>
   <div class="view-bar" id="view-bar">
@@ -783,6 +792,10 @@ function blankFood(){
 }
 let food = blankFood();
 
+// The one place the app's version is written in index.html (label, backups, Admin).
+// sw.js VERSION must match — bump both together, once per deploy (Rule #10).
+const APP_VERSION = 'v48';
+const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
 function S(){ return store[workoutMode]; }
@@ -1164,7 +1177,7 @@ function saveViewPrefs(){
 }
 function applyViewPrefs(v){
   if (!v) return;
-  if (v.section === 'workout' || v.section === 'food') viewState.section = v.section;
+  if (SECTIONS.includes(v.section)) viewState.section = v.section;
   if (['today','history','saved','recipes'].includes(v.foodTab)) viewState.foodTab = v.foodTab;
 }
 
@@ -1344,6 +1357,8 @@ function render(){
   if (hp){
     if (viewState.section === 'food'){
       hp.textContent = 'Today · ' + fmtShort(todayStr());
+    } else if (viewState.section === 'admin'){
+      hp.textContent = 'Sync, backups and exports';
     } else {
       const p = projection();
       hp.textContent = p.firstDate
@@ -1357,16 +1372,18 @@ function render(){
   let html;
   if (viewState.section === 'food'){
     html = renderFood();
+  } else if (viewState.section === 'admin'){
+    html = renderAdmin();
   } else if (viewState.mode === 'day'){
     html = renderDayView(viewState.dayAnchor);
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
-  html += '<div class="ver">v47 · ' + (viewState.section === 'food' ? 'Food' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
+  html += '<div class="ver">' + APP_VERSION + ' · ' + (viewState.section === 'food' ? 'Food' : viewState.section === 'admin' ? 'Admin' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
 
-  if (viewState.section === 'food' || viewState.mode !== 'day') window.scrollTo(0, y);
+  if (viewState.section !== 'workout' || viewState.mode !== 'day') window.scrollTo(0, y);
   updateScrollTodayBtn();
 }
 
@@ -1904,12 +1921,65 @@ function autoResizeExNotes(el){
 // MODE SWITCH
 // ==========================================
 // ==========================================
-// SECTION TOGGLE (workout / food)
+// SECTION TOGGLE (workout / food / admin)
 // ==========================================
+// ---- Admin tab (v48): sync, inbox, backup/restore, export ----
+// Everything here already existed on the header toolbar or in the Sync panel;
+// this page just gathers it and says what each thing does. Actions go through
+// the same functions as before (syncNow, openSyncModal, exportBackup, …).
+function renderAdmin(){
+  const k = syncKey(), m = syncMeta();
+  const card = (title, body) => '<div class="admin-card"><h3>' + title + '</h3>' + body + '</div>';
+  const line = t => '<div class="admin-line">' + t + '</div>';
+  const btn = (act, label, cls) => '<button class="btn ' + (cls || 'btn-secondary') + '" data-act="' + act + '">' + label + '</button>';
+  let h = '<div class="admin">';
+
+  let sync;
+  if (!k){
+    sync = line('Not set up on this device. Sync keeps your phone and laptop in step.')
+      + '<div class="admin-actions">' + btn('admin-sync-settings', 'Set up sync', 'btn-primary') + '</div>';
+  } else {
+    const status = ({ syncing: '⏳ Syncing…', ok: '✅ Up to date', idle: '☁️ Linked',
+      offline: '📴 Offline — changes upload when you\'re back online',
+      conflict: '⚠️ Both devices changed — tap Sync now to choose which copy to keep',
+      error: '⚠️ Last attempt failed' + (syncState.detail ? ': ' + esc(syncState.detail) : '') })[syncState.status] || '☁️ Linked';
+    const last = m.lastSync ? new Date(m.lastSync).toLocaleString() : 'never';
+    const stale = m.lastSync && (Date.now() - new Date(m.lastSync).getTime()) > 7 * 864e5;
+    sync = line(status)
+      + line('Last synced: ' + esc(last) + (stale ? ' — <b>over a week ago</b>' : ''))
+      + line('Unsynced changes on this device: <b>' + (m.dirty ? 'yes' : 'no') + '</b>')
+      + '<div class="admin-actions">' + btn('admin-sync-now', 'Sync now', 'btn-primary') + btn('admin-sync-settings', 'Sync settings') + '</div>';
+  }
+  h += card('☁️ Sync', sync);
+
+  let inbox;
+  if (!inboxKey()){
+    inbox = line('Not set up. Lets Claude suggest meals for you to review — set it up in Sync settings.')
+      + '<div class="admin-actions">' + btn('admin-sync-settings', 'Sync settings') + '</div>';
+  } else {
+    const n = inboxState.rows.length;
+    inbox = line(n ? '<b>' + n + ' suggestion' + (n === 1 ? '' : 's') + '</b> waiting for review.' : 'Set up. Nothing waiting.')
+      + '<div class="admin-actions">' + (n ? btn('inbox-review', 'Review', 'btn-primary') : '') + btn('inbox-check', 'Check now') + '</div>';
+  }
+  h += card('📥 Claude inbox', inbox);
+
+  h += card('💾 Backup & restore',
+    line('<b>Backup</b> saves everything — workouts and food — as a file. Worth doing now and then.')
+    + line('<b>Restore</b> replaces everything on this device with a backup file. One safety copy of what\'s here now is kept.')
+    + '<div class="admin-actions">' + btn('admin-backup', '💾 Backup') + btn('admin-restore', '♻️ Restore') + '</div>');
+
+  h += card('📥 Export',
+    line('<b>Workout CSV</b> — your ' + (workoutMode === 'travel' ? 'Travel' : 'Gym') + ' workouts for a spreadsheet. A report, not a backup (food isn\'t included).')
+    + '<div class="admin-actions">' + btn('admin-csv', '📥 Workout CSV') + '</div>');
+
+  h += line('App version ' + APP_VERSION + '. If an update doesn\'t show, fully close the app and reopen it.');
+  return h + '</div>';
+}
+
 function switchSection(section){
-  if (section !== 'workout' && section !== 'food') return;
+  if (!SECTIONS.includes(section)) return;
   viewState.section = section;
-  // Hide workout-only chrome when on Food; mirror the existing goToDay/backToMonth pattern.
+  // Hide workout-only chrome on Food and Admin; mirror the existing goToDay/backToMonth pattern.
   ['view-bar','mode-toggle'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = section === 'workout' ? '' : 'none';
@@ -3238,6 +3308,11 @@ function handleFoodClick(e){
     case 'delete-saved-meal': deleteSavedMeal(id); break;
     case 'edit-saved-meal': openSavedMealEditor(id); break;
     case 'new-saved-meal': openSavedMealEditor(null); break;
+    case 'admin-sync-now': syncNow(false); break;
+    case 'admin-sync-settings': openSyncModal(); break;
+    case 'admin-backup': exportBackup(); break;
+    case 'admin-restore': document.getElementById('restore-file').click(); break;
+    case 'admin-csv': exportCSV(); break;
     case 'inbox-review': openInboxReview(); break;
     case 'inbox-accept': inboxAccept(id); break;
     case 'inbox-reject': inboxReject(id); break;
@@ -3379,7 +3454,7 @@ function exportBackup(){
     _backup: BACKUP_TAG,
     _backupVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: 'v47',
+    appVersion: APP_VERSION,
     data,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type:'application/json' }));
@@ -3480,12 +3555,16 @@ function newSyncKey(){
 }
 
 let syncState = { status:'idle', detail:'' };
+// Sync status used to show on the toolbar's Sync button. Since v48 that button
+// lives on the Admin page, so problems (offline/error/conflict) are flagged on
+// the Admin tab itself — otherwise they'd be invisible from Workout and Food.
 function setSyncStatus(status, detail){
   syncState = { status, detail: detail || '' };
-  const b = document.getElementById('sync-btn');
-  if (b) b.textContent = ({ idle:'☁️ Sync', syncing:'⏳ Sync', ok:'✅ Sync',
-                            offline:'📴 Sync', error:'⚠️ Sync', conflict:'⚠️ Sync' })[status] || '☁️ Sync';
+  const seg = document.getElementById('admin-seg');
+  if (seg) seg.textContent = '⚙️ Admin' + (SYNC_BADGE[status] ? ' ' + SYNC_BADGE[status] : '');
+  if (viewState.section === 'admin') render();
 }
+const SYNC_BADGE = { offline: '📴', error: '⚠️', conflict: '⚠️' };
 
 function sbReq(path, opts){
   const o = opts || {};

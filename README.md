@@ -19,6 +19,9 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 - **Saved** — one-tap meals you have regularly. ✎ edits one; **+ New saved meal** builds one; **⤓ Import** takes a list Claude prepares.
 - **Recipes** — meal-prep batches. **Log amount…** logs part of a portion or a weight (weigh the whole cooked batch once and enter it under Edit).
 
+### Admin tab
+Sync (status, **Sync now**, and **Sync settings** with your codes), the Claude inbox, **Backup**, **Restore** and the workout **CSV** all live here. If sync needs attention, the tab itself shows 📴 (no connection) or ⚠️ (a problem), so you'll see it from any screen.
+
 ### Logging food with Claude
 1. Send Claude your list for the day (like the ones you've been sending).
 2. Claude looks up anything it doesn't know, then sends the meals to your **Claude inbox**.
@@ -35,7 +38,7 @@ Nothing is added to your log until you tap Accept. Anything Claude had to estima
 | **Sync code** | `bw-` | Links your devices and opens your **entire** history | Only your devices. Never send it to anyone, including Claude. |
 | **Inbox key** | `ib-` | Lets Claude *suggest* meals for you to review. It can't see or change your log. | Your devices, and the Windows setting `BILLYS_INBOX_KEY` on the PC where Claude runs |
 
-Both are shown in the app under **☁️ Sync**.
+Both are shown in the app under **⚙️ Admin → Sync settings**.
 
 ---
 
@@ -44,14 +47,17 @@ Both are shown in the app under **☁️ Sync**.
 | What you see | What to do |
 |---|---|
 | An update didn't show up | Fully close the app (swipe it away) and reopen it. Don't clear its data. |
-| Meals or workouts missing on one device | On the device where you entered them: **☁️ Sync → Sync now** (it needs a connection). Then open the other device. |
+| Meals or workouts missing on one device | On the device where you entered them: **⚙️ Admin → Sync now** (it needs a connection). Then open the other device. |
 | A **"Sync conflict"** box | Both devices changed while apart. Pick the side showing **more** workouts and meals. The other side is kept as a one-time backup. |
-| Claude's meals don't appear | **☁️ Sync → Check for suggestions now.** If still nothing, ask Claude to check the inbox. |
+| Claude's meals don't appear | **⚙️ Admin → Claude inbox → Check now.** If still nothing, ask Claude to check the inbox. |
+| A ⚠️ or 📴 on the **Admin** tab | Open Admin: it says what's wrong. 📴 = no connection (changes upload later); ⚠️ = a sync problem or a conflict to resolve with **Sync now**. |
 | Sync says "last synced over a week ago" | Tell Claude — the free Supabase project may have paused. Your data on the device is safe either way. |
 
 ---
 
 ## Backups
+
+All on the **⚙️ Admin** tab.
 
 - **💾 Backup** saves everything (workouts and food) as a file. Worth doing now and then.
 - **♻️ Restore** replaces everything on that device with a backup file. It keeps one safety copy of what was there, in case you picked the wrong file.
