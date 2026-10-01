@@ -144,4 +144,4 @@
 5. `git diff --stat` shows only intended lines; no BOM, no mojibake, no secrets or real `bw-`/`ib-` keys (§5, §7).
 6. `APP_VERSION` (index.html) and `sw.js` VERSION bumped once, to the same value (a test enforces the match).
 7. Browser check at phone width on a `localhost` origin with `fetch` stubbed; console clean. Changed a tab row or label? Measure at 320/375/414 with badges showing (§8). No sync code in the test copy, and nothing new in the live data afterwards (§9).
-8. Commit locally, **report to William, push only on "push"** (`git fetch` first). Then confirm the live `sw.js` and syntax-check the live script.
+8. Commit and push tested, requested changes without a separate “push” confirmation (`git fetch` first); report the result to William. Then confirm the live `sw.js` and syntax-check the live script.

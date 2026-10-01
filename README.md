@@ -16,6 +16,7 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 ### Food tab
 - **Day** — today's meals grouped by Breakfast, Morning Snack, Lunch, and so on, with your calorie and protein progress. **‹ ›** moves between days. **Edit goals** changes your daily targets.
 - **🔥 Calories burned** — under your progress on the Day screen. Tap it and type the day's total calories burned from Samsung Health, or put "Burned: 2650" in the list you send Claude. The day then shows "2,150 eaten · 2,650 burned · 500 under". Tap it again to change or remove it.
+- **Calendar** — a monthly grid like Workout, showing calories In, calories Out and protein (P) for each day. Tap a date to open its meals and edit total calories burned. Dashes mean not logged; under/over uses logged intake and may be incomplete. Use **List history** for the original daily list.
 - **History** — each day's totals and what you ate (and eaten vs burned, when you've added it). Tap a day to open it.
 - **Saved** — one-tap meals you have regularly. ✎ edits one; **+ New saved meal** builds one; **⤓ Import** takes a list Claude prepares.
 - **Recipes** — meal-prep batches. **Log amount…** logs part of a portion or a weight (weigh the whole cooked batch once and enter it under Edit).

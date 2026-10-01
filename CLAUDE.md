@@ -59,6 +59,8 @@ When William pastes a day's list and asks for it to be added:
 
 ### Features, in one line each
 
+- **Nutrition calendar (v52):** Food → Calendar renders existing meals and `burnedByDay`; `foodCalendarDay()` distinguishes missing data from zero. `viewState.foodMonth` is session-only and included in back-navigation snapshots. List history remains available within Calendar.
+
 - **Recipes:** `ing.portions` lets one ingredient divide differently (rice made 7 of 8); `r.cookedWeightG` enables logging by grams. Logged meals record `meal.recipe`.
 - **Saved meals:** create / ✎ edit in the meal editor's saved mode; **⤓ Import** takes JSON (format above `parseSavedMealsImport()`), all-or-nothing, replacing same-named meals in place.
 - **Photo estimates:** `POST /api/analyze-food`, authenticated with the device's sync code checked against Supabase (fails closed). Results only ever fill the open editor — **never save an AI result directly.** Env vars on Netlify: `OPENAI_API_KEY` + `OPENAI_BASE_URL` (AI Gateway), optional `FOOD_AI_MODEL`, `FOOD_AI_DISABLED=1` kill switch. Never put a model key in `index.html`.
@@ -74,7 +76,7 @@ When William pastes a day's list and asks for it to be added:
 - `node tests/check_syntax.cjs` and `node tests/workout.test.cjs` before every commit. The suite must print its summary line; `TESTS DID NOT FINISH` (exit 1) means an async test hung.
 - **Break it and watch it fail** for every new behaviour (mutation check in a scratch copy). Build the scratch copy from **every tracked file** (`git ls-files`, plus any new untracked file under test) and **refuse to run unless the unmutated copy passes** — the tests read `sw.js`, `netlify.toml`, `tools/` and more, and a missing file makes every mutation "fail" and read as caught. This has happened three times (FAILURE-MODES §4).
 - Browser checks use a separate `http://localhost` origin with `fetch` stubbed, never the live site's data. `file://` previews in the pane have storage disabled. **Never put a sync code — real or fake — into a browser test copy**, and remember anything the app does *on page load* happens before your stubs (FAILURE-MODES §9). To clear a test copy's storage, open a non-app file on the same origin (e.g. `/manifest.json`) and use `localStorage` there.
-- **William's standing rule: commit locally, then report** (what changed, files, test results, assumptions, known issues) **and push only when he says "push"** — `git fetch` first, never force-push. Bump the version once per deploy: `APP_VERSION` in `index.html` (the only place it's written there — label, backups and Admin read it) and `VERSION` in `sw.js`. A test fails if they differ. After pushing, confirm the live `sw.js` version and syntax-check the live script.
+- **Delivery workflow:** complete and test requested changes, commit, and push without requiring a separate “push” message. Report what changed, validation, assumptions and known issues. Run `git fetch` first; never force-push. Bump the version once per deploy: `APP_VERSION` in `index.html` (the only place it's written there — label, backups and Admin read it) and `VERSION` in `sw.js`. A test fails if they differ. After pushing, confirm the live `sw.js` version and syntax-check the live script.
 - He works in small approved steps ("gates"). Don't start the next piece until he asks.
 
 ---
@@ -300,7 +302,7 @@ Resolved items that used to live here are recorded in `CHANGELOG.md`.
 
 1. Edit `index.html`; bump `APP_VERSION` there and `VERSION` in `sw.js` to the same value (Rule #10 — a test fails if they differ).
 2. `node tests/check_syntax.cjs` and `node tests/workout.test.cjs`.
-3. Commit locally and **report to William**; push to `main` only when he says "push" (`git fetch` first).
+3. Commit tested changes and push to `main` without a separate confirmation (`git fetch` first), then report the result to William.
 4. Netlify publishes in under a minute. Confirm the live `sw.js` VERSION and syntax-check the live script.
 
 This machine (William's home Windows box) can push to GitHub directly. Netlify state can also be read through the Netlify MCP.

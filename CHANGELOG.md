@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-09-30 — v52: Nutrition calendar (local, not published)
+
+Food now has a Calendar tab, matching the workout calendar's Sunday-first month grid. Dates show calories in, total burned, protein and the difference when both calorie values exist. Missing entries stay blank, with dashes rather than zero. Month controls, This month, accessible date buttons and a List history link reuse existing food and burn data. Future dates are disabled. Calendar position is session-only, participates in Android back navigation and never writes synced data.
+
+Validation: syntax and logic suite, plus isolated mutation checks. Browser layout checks remain pending: this environment's browser blocks localhost and its Chromium download failed. No live data or Samsung Health values changed.
+
 ## 2026-09-26 — v51: Android back button, calories burned
 
 **Back button.** William kept pressing Android's back button expecting the previous screen, and it closed the app (an installed web app has no history of its own). Now back steps out of whatever is open, innermost first: a picked search result, the search, an open item card, then the sheet — asking "Discard this meal?" only if the meal was changed. With no sheet open it retraces screens (Workout/Food/Admin, Food tabs, a past food day, a workout day) in reverse. At the first screen it shows "Press back again to close"; a second press within 2 s closes the app. The on-screen "Back to today" / calendar buttons don't make back bounce between two screens. Screen history is session-only, never saved or synced.

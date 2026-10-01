@@ -421,6 +421,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .food-log-preview{background:var(--card);border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center}
 .food-log-err{color:var(--red);font-weight:500}
 .food-recipe-actions{flex-wrap:wrap}
+
+/* Nutrition calendar: same seven-column layout as the workout calendar. */
+.nutrition-calendar .month-day{font-family:inherit;color:var(--text);min-height:100px;gap:5px;padding:7px 1px}
+.nutrition-calendar .month-day:disabled{cursor:default;opacity:.35}
+.nutrition-calendar .month-day.dim:not(:disabled){opacity:.6}
+.nutrition-calendar .nc-value{font-size:10px;line-height:1.2;white-space:nowrap}
+.nutrition-calendar .nc-in{color:var(--accent)}
+.nutrition-calendar .nc-out{color:var(--text)}
+.nutrition-calendar .nc-protein{color:var(--green)}
+.nutrition-calendar .nc-label{font-size:9px;color:var(--muted)}
+.nutrition-calendar .nc-balance{font-size:9px;color:var(--muted);line-height:1.2}
+.nc-help{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 0}
+@media(max-width:360px){#food-tab-nav .section-seg{font-size:11px;gap:2px}.nutrition-calendar .nc-value{font-size:9px}}
+
 </style>
 </head>
 <body>
@@ -833,7 +847,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1217,7 +1231,7 @@ function saveViewPrefs(){
 function applyViewPrefs(v){
   if (!v) return;
   if (SECTIONS.includes(v.section)) viewState.section = v.section;
-  if (['today','history','saved','recipes'].includes(v.foodTab)) viewState.foodTab = v.foodTab;
+  if (['today','calendar','history','saved','recipes'].includes(v.foodTab)) viewState.foodTab = v.foodTab;
 }
 
 const LEGACY_SUNDAY = '2026-06-07';   // week 0, day 0 in the old schema
@@ -2028,7 +2042,7 @@ function renderAdmin(){
 const NAV_MAX = 30;
 let navStack = [], navExitArmedAt = 0, navExiting = false;
 function navSnapshot(){
-  const s = { section: viewState.section, foodTab: viewState.foodTab || 'today', foodDay: viewState.foodDay || null,
+  const s = { section: viewState.section, foodTab: viewState.foodTab || 'today', foodDay: viewState.foodDay || null, foodMonth: viewState.foodMonth || null,
               mode: viewState.mode === 'day' ? 'day' : 'list' };
   if (s.mode === 'day') s.dayAnchor = viewState.dayAnchor;
   return s;
@@ -2046,7 +2060,7 @@ function navRecord(prev){
 // Sets the view directly (not through switchSection etc.), so restoring a
 // screen never records a new step.
 function navApply(s){
-  viewState.section = s.section; viewState.foodTab = s.foodTab; viewState.foodDay = s.foodDay;
+  viewState.section = s.section; viewState.foodTab = s.foodTab; viewState.foodDay = s.foodDay; viewState.foodMonth = s.foodMonth;
   if (s.mode === 'day'){ viewState.mode = 'day'; viewState.dayAnchor = s.dayAnchor; }
   else if (viewState.mode === 'day') viewState.mode = 'monthly';
   const workoutChrome = s.section === 'workout' && viewState.mode !== 'day';
@@ -2464,18 +2478,70 @@ function renderFoodRecipes(){
   return h;
 }
 
+// Nutrition calendar is a view over existing meals and burnedByDay; no totals are stored.
+function foodCalendarDay(ds){
+  const t = foodTotalsForDay(ds), burned = burnedFor(ds);
+  const eaten = t.count > 0 ? Math.round(t.kcal) : null;
+  return { eaten, burned, protein: t.count > 0 ? Math.round(t.proteinG) : null,
+    balance: eaten != null && burned != null ? eaten - burned : null };
+}
+function moveFoodMonth(step){
+  const prev = navSnapshot(), d = fromStr(viewState.foodMonth || foodDay());
+  const target = step === 0 ? todayStr().slice(0,7) + '-01' : toStr(new Date(d.getFullYear(), d.getMonth() + step, 1));
+  const current = todayStr().slice(0,7) + '-01';
+  viewState.foodMonth = target > current ? current : target;
+  render();
+  navRecord(prev);
+}
+function renderFoodCalendar(){
+  const anchor = fromStr(viewState.foodMonth || foodDay());
+  const first = toStr(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+  const month = first.slice(0,7), today = todayStr();
+  const start = sundayOf(first);
+  const rows = Math.ceil((dowOf(first) + new Date(anchor.getFullYear(), anchor.getMonth()+1, 0).getDate()) / 7);
+  let h = '<div class="food-daynav"><button class="mini-btn" aria-label="Previous month" data-act="food-month-prev">‹</button>'
+    + '<div class="food-daynav-label">' + anchor.toLocaleDateString('en-US',{month:'long',year:'numeric'}) + '</div>'
+    + '<button class="mini-btn" aria-label="Next month" data-act="food-month-next"' + (month >= today.slice(0,7) ? ' disabled' : '') + '>›</button></div>';
+  h += '<div class="food-daynav"><button class="mini-btn" data-act="food-month-today">This month</button>'
+    + '<button class="mini-btn" data-act="food-tab" data-tab="history">List history</button></div>';
+  h += '<p class="nc-help">In = food calories · Out = total calories burned · P = protein in grams. Tap a day to view meals or enter Samsung Health’s total burned.</p>';
+  h += '<div class="month-grid nutrition-calendar"><div class="month-week-row">';
+  DAY_SHORT.forEach(d => { h += '<div class="month-hd">' + d + '</div>'; });
+  h += '</div>';
+  for(let r=0;r<rows;r++){
+    h += '<div class="month-week-row">';
+    for(let c=0;c<7;c++){
+      const ds=addDays(start,r*7+c), v=foodCalendarDay(ds), future=ds>today;
+      const value = n => n == null ? '—' : fmtKcal(n);
+      const balance = v.balance == null ? '' : (v.balance === 0 ? 'Even' : fmtKcal(v.balance) + (v.balance < 0 ? ' under' : ' over'));
+      const label = fmtLong(ds) + ': ' + (v.eaten == null ? 'food not logged' : v.eaten + ' calories in')
+        + ', ' + (v.burned == null ? 'burn not logged' : v.burned + ' calories out')
+        + ', ' + (v.protein == null ? 'protein not logged' : v.protein + ' grams protein') + (balance ? ', '+balance : '');
+      h += '<button class="month-day' + (ds.slice(0,7)!==month?' dim':'') + (ds===today?' today':'')
+        + '" data-act="food-open-day" data-ds="' + ds + '" aria-label="' + esc(label) + '"' + (future?' disabled':'') + '>'
+        + '<span class="md-num">' + fromStr(ds).getDate() + '</span>'
+        + '<span class="nc-value nc-in"><span class="nc-label">In </span>' + value(v.eaten) + '</span>'
+        + '<span class="nc-value nc-out"><span class="nc-label">Out </span>' + value(v.burned) + '</span>'
+        + '<span class="nc-value nc-protein"><span class="nc-label">P </span>' + value(v.protein) + (v.protein != null?'g':'') + '</span>'
+        + (balance?'<span class="nc-balance">'+balance+'</span>':'') + '</button>';
+    }
+    h += '</div>';
+  }
+  return h + '</div><p class="nc-help">— means not logged. Under/over compares logged food with total burned; incomplete meals give an incomplete balance.</p>';
+}
+
 function renderFoodNav(){
   const tab = viewState.foodTab || 'today';
   return '<div class="section-toggle" style="margin-bottom:12px"><div class="section-toggle-inner" id="food-tab-nav">'
     + '<button class="section-seg' + (tab === 'today' ? ' active' : '') + '" data-tab="today" data-act="food-tab">📊 Day</button>'
-    + '<button class="section-seg' + (tab === 'history' ? ' active' : '') + '" data-tab="history" data-act="food-tab">📅 History</button>'
+    + '<button class="section-seg' + (['calendar','history'].includes(tab) ? ' active' : '') + '" data-tab="calendar" data-act="food-tab">📅 Calendar</button>'
     + '<button class="section-seg' + (tab === 'saved' ? ' active' : '') + '" data-tab="saved" data-act="food-tab">⭐ Saved</button>'
     + '<button class="section-seg' + (tab === 'recipes' ? ' active' : '') + '" data-tab="recipes" data-act="food-tab">🧾 Recipes</button>'
     + '</div></div>';
 }
 
 function setFoodTab(tab){
-  if (!['today','history','saved','recipes'].includes(tab)) return;
+  if (!['today','calendar','history','saved','recipes'].includes(tab)) return;
   const prev = navSnapshot();
   viewState.foodTab = tab;
   document.querySelectorAll('#food-tab-nav .section-seg').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -2488,7 +2554,8 @@ function renderFood(){
   let h = renderInboxBanner() + renderFoodNav();
   const tab = viewState.foodTab || 'today';
   if (tab === 'today') h += renderFoodToday();
-  else if (tab === 'history') h += renderFoodHistory();
+  else if (tab === 'calendar') h += renderFoodCalendar();
+  else if (tab === 'history') h += '<button class="mini-btn" data-act="food-tab" data-tab="calendar">← Calendar</button>' + renderFoodHistory();
   else if (tab === 'saved') h += renderFoodSaved();
   else if (tab === 'recipes') h += renderFoodRecipes();
   return h;
@@ -3883,6 +3950,9 @@ function handleFoodClick(e){
   const ds = el.dataset.ds;
   switch (act) {
     case 'food-tab': setFoodTab(el.dataset.tab); break;
+    case 'food-month-prev': moveFoodMonth(-1); break;
+    case 'food-month-next': moveFoodMonth(1); break;
+    case 'food-month-today': moveFoodMonth(0); break;
     case 'log-meal': openMealEditor(foodDay(), null); break;
     case 'food-day-prev': setFoodDay(addDays(foodDay(), -1)); break;
     case 'food-day-next': setFoodDay(addDays(foodDay(), 1)); break;
