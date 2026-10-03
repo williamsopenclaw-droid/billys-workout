@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-02 — v57: Tap an exercise for its trends
+
+Exercise names in daily/weekly workout rows now open the selected exercise's trends directly. Exercise settings remains available from that sheet for swaps, set counts, guidance and progression. Changing chart metrics retains the original date/slot context. Exercises with no history stay selected and show an empty state rather than silently switching to a different exercise. The overall Workout trends button remains available.
+
+Validation: syntax and 1052 assertions passed; five deliberate mutations caught from a passing full tracked-file copy. Checks cover the rendered click handler, selected exercise, empty history, chart changes, settings access and read-only state. Phone-browser verification remains blocked by the previously confirmed browser-install/localhost limitations.
+
 ## 2026-10-02 — v56: Workout trends
 
 Workout now offers a trends sheet with a logged-exercise selector, best-set or recorded-weight chart, latest-session comparison, and the latest 20 sessions with before/after check-ins. Exact exercise names and Gym/Travel data remain separate. Entered sets only; zero is valid, blanks/invalid values are omitted. Timed sets use seconds. Missing historical weights are not inferred from current progression; mixed loads and partial sessions are labelled. Comparisons report weight and rep changes independently instead of declaring stronger/weaker from mixed changes. Trends navigation is read-only and Android Back closes the sheet.

@@ -201,6 +201,37 @@ eq(pinLoad.run("peekSession('2026-09-28',0).weight"),undefined);
 const trReload=app('2026-10-02',JSON.parse(pinLoad.memory.get('caprica_workout_v2')));
 eq(trReload.run("workoutTrendData()['Barbell Bench Press'][1].load"),150);
 
+// Daily exercise names open that exact trend, including an unlogged exercise.
+const dailyTrend=app('2026-10-02');
+dailyTrend.run("onRepChange({value:'6'},'2026-10-02',1,0);saveState()");
+const dailyBefore=dailyTrend.memory.get('caprica_workout_v2');
+const dailyRow=dailyTrend.run("renderExRow('2026-10-02',getPlan('2026-10-02')[0],0)");
+const dailyClick=dailyRow.match(/class="ex-cell" onclick="([^"]+)"/)[1];
+ok(dailyClick.includes('openExerciseTrends'));
+dailyTrend.run(dailyClick);
+let dailyModal=dailyTrend.el('modal').innerHTML;
+ok(dailyModal.includes('value="Barbell Bench Press" selected'));
+ok(dailyModal.includes('No recorded sets for this exercise yet.'));
+ok(dailyModal.includes('Exercise settings'));
+// Changing the metric keeps settings attached to the original workout slot.
+dailyTrend.el('trend-exercise').value='Barbell Bench Press';
+const metricAction=dailyModal.match(/id="trend-metric" onchange="([^"]+)"/)[1];
+dailyTrend.run('(function(){'+metricAction+'}).call({value:"load"})');
+dailyModal=dailyTrend.el('modal').innerHTML;
+ok(dailyModal.includes('value="load" selected'));
+const settingsAction=dailyModal.match(/onclick="([^"]+)">Exercise settings/)[1];
+dailyTrend.run(settingsAction);
+ok(dailyTrend.el('modal').innerHTML.includes('<h2>Barbell Bench Press</h2>'));
+ok(dailyTrend.el('modal').innerHTML.includes('Swap exercise'));
+eq(dailyTrend.memory.get('caprica_workout_v2'),dailyBefore);
+dailyTrend.run("closeModal();onRepChange({value:'8'},'2026-10-02',0,0);openExerciseTrends('2026-10-02',0)");
+ok(dailyTrend.el('modal').innerHTML.includes('<svg'));
+ok(dailyTrend.el('modal').innerHTML.includes('value="Barbell Bench Press" selected'));
+eq(dailyTrend.run('handleBack()'),'sheet');
+// The overall trends button remains available without a day-specific settings link.
+dailyTrend.run('openWorkoutTrends()');
+ok(!dailyTrend.el('modal').innerHTML.includes('Exercise settings'));
+
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
 eq(a.run("Array.from({length:14},(_,i)=>getDayType(addDays('2026-09-21',i)))"),

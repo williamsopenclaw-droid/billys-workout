@@ -865,7 +865,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1549,18 +1549,27 @@ function trendCheckInSummary(ds,phase){
   if (typeof entry.note === 'string' && entry.note.trim()) parts.push(entry.note.slice(0,500));
   return esc(parts.length ? parts.join(' · ') : 'Not recorded');
 }
-function openWorkoutTrends(name,metric){
+function openExerciseTrends(ds,i){
+  const ex = (getPlan(ds) || [])[i];
+  if (ex) openWorkoutTrends(ex.exercise,'best',ds,i);
+}
+function openWorkoutTrends(name,metric,ds,i){
   const data = workoutTrendData(), names = Object.keys(data).sort();
+  // Keep the tapped exercise selected even when it has no recorded sets yet.
+  if (typeof name === 'string' && name && !names.includes(name)) names.push(name);
   const selected = names.includes(name) ? name : names[0];
+  const ex = validDateStr(ds) && Number.isInteger(i) ? (getPlan(ds) || [])[i] : null;
+  const contextArgs = ex ? ",\'" + ds + "\'," + i : '';
   const chosen = metric === 'load' ? 'load' : 'best';
   let h = '<h2>Workout trends</h2><div class="sub">' + (workoutMode === 'gym' ? 'Gym' : 'Travel') + ' · Each exercise variation is tracked separately.</div>';
   if (!selected) h += '<div class="rule">No logged reps yet. Record a set to start your trends.</div>';
   else {
-    h += '<label class="form-label" for="trend-exercise">Exercise</label><select class="form-select" id="trend-exercise" onchange="openWorkoutTrends(this.value,document.getElementById(\'trend-metric\').value)">';
+    if (ex && ex.exercise === selected) h += '<button class="btn btn-secondary" onclick="openExerciseModal(\'' + ds + '\',' + i + ')">Exercise settings · swaps &amp; sets</button>';
+    h += '<label class="form-label" for="trend-exercise">Exercise</label><select class="form-select" id="trend-exercise" onchange="openWorkoutTrends(this.value,document.getElementById(\'trend-metric\').value' + contextArgs + ')">';
     h += names.map(n => '<option value="' + esc(n) + '"' + (n===selected ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
-    h += '<label class="form-label" for="trend-metric">Chart</label><select class="form-select" id="trend-metric" onchange="openWorkoutTrends(document.getElementById(\'trend-exercise\').value,this.value)"><option value="best"' + (chosen==='best'?' selected':'') + '>Best set (reps or seconds)</option><option value="load"' + (chosen==='load'?' selected':'') + '>Recorded weight (lb)</option></select>';
-    const rows = data[selected];
-    h += '<div class="rule">' + esc(trendComparison(rows)) + '</div>' + trendChart(rows,chosen);
+    h += '<label class="form-label" for="trend-metric">Chart</label><select class="form-select" id="trend-metric" onchange="openWorkoutTrends(document.getElementById(\'trend-exercise\').value,this.value' + contextArgs + ')"><option value="best"' + (chosen==='best'?' selected':'') + '>Best set (reps or seconds)</option><option value="load"' + (chosen==='load'?' selected':'') + '>Recorded weight (lb)</option></select>';
+    const rows = data[selected] || [];
+    h += '<div class="rule">' + esc(trendComparison(rows)) + '</div>' + (rows.length ? trendChart(rows,chosen) : '<div class="sub">No recorded sets for this exercise yet.</div>');
     h += '<div class="sub">Only entered sets count. Best set is the highest reps or seconds entered that day. Weight uses the saved session load; missing older loads are not inferred from your current weight.</div>';
     h += '<h3>Session history</h3>';
     rows.slice(-20).reverse().forEach(r => {
@@ -1774,7 +1783,7 @@ function renderDay(ds, isToday){
   html += '</div>';
 
   if (isGymDay(ds)) html += '<div class="rule">Working sets only; warm up first. Leave 2–3 reps in reserve.<br>'
-    + 'Rest 2–3 min on main lifts, 60–90 sec on accessories. Tap an exercise for guidance.<br>'
+    + 'Rest 2–3 min on main lifts, 60–90 sec on accessories. Tap an exercise for trends; Exercise settings has guidance and swaps.<br>'
     + 'Review saved weights before starting. Blank weights need your own starting load.</div>';
   html += renderWorkoutCheckIn(ds, 'start');
   const maxSets = Math.max.apply(null, plan.map(e => e.sets).concat([2]));
@@ -1815,14 +1824,14 @@ function renderExRow(ds, ex, i){
 
   let html = '<div class="ex-row' + (done ? ' completed' : '') + (earned ? ' earned' : '') + '">';
 
-  html += '<div class="col col-exercise"><div class="ex-cell" onclick="openExerciseModal(\'' + ds + '\',' + i + ')">';
+  html += '<div class="col col-exercise"><div class="ex-cell" onclick="openExerciseTrends(\'' + ds + '\',' + i + ')">';
   html += '<div class="ex-main"><div class="ex-color-dot" style="background:' + muscleColor(ex.muscle) + '"></div>';
   html += '<div class="ex-name-text">' + esc(ex.exercise) + '</div>';
   html += '<a class="vid-link" href="https://www.youtube.com/results?search_query='
        + encodeURIComponent(ex.exercise.replace(/'/g,'') + ' form tutorial')
        + '" target="_blank" onclick="event.stopPropagation()">▶</a></div>';
   html += '<div class="ex-sets-label">' + (prog ? prog.range : '') + ' · ' + ex.sets + ' sets'
-       + (prog && prog.top && !isNaN(parseFloat(w)) ? (isGymDay(ds) ? ' · tap to progress' : ' · all @' + prog.top + ' = +10%') : '') + '</div>';
+       + (prog && prog.top && !isNaN(parseFloat(w)) ? (isGymDay(ds) ? ' · tap for trends' : ' · all @' + prog.top + ' = +10%') : '') + '</div>';
   html += '</div></div>';
 
   html += '<div class="col col-weight"><div class="cell">';
