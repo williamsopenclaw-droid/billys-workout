@@ -147,6 +147,60 @@ eq(newFeeling.run("workoutCheckIn('2026-10-02','start')"),{sick:'yes',future:42,
 eq(newFeeling.run("checkInFeeling(workoutCheckIn('2026-10-02','end'))"),'Great');
 ok(!newFeeling.run("renderWorkoutCheckIn('2026-10-02','end')").includes('Previously recorded'));
 
+// Read-only workout trends: exact exercise identity, recorded loads and units.
+const tr=app('2026-10-02');
+tr.run(`S().dayTypes={'2026-09-28':'Upper A','2026-09-30':'Upper A','2026-10-02':'Upper A'};
+for(const d of Object.keys(S().dayTypes)) S().dayPlans[d]=[{exercise:'Dumbbell Row (Bent Over)',muscle:'Back',sets:3},{exercise:'Pull-ups (Neutral Grip)',muscle:'Back',sets:2},{exercise:'Plank',muscle:'Core',sets:2}];
+S().sessionLog={
+ '2026-09-28':{0:{weight:'40',reps:[8,7,6]},1:{weight:'BW',reps:[5,4]},2:{weight:'BW',reps:[20,25]}},
+ '2026-09-30':{0:{weight:'40',reps:[10,8,7]},1:{weight:'BW',reps:[6,5]},2:{weight:'BW',reps:[30,25]}},
+ '2026-10-02':{0:{weight:'45',reps:[8,7]},1:{weight:'BW',reps:[8,6]},2:{weight:'BW',reps:[35]}}
+};
+S().checkIns={'2026-10-02':{start:{energy:'Weak',feeling:'Bad',note:'<img src=x onerror=alert(1)>'},end:{energy:'Good',feeling:'Great'}}};saveState();`);
+const trBefore=tr.memory.get('caprica_workout_v2');
+eq(tr.run("workoutTrendData()['Dumbbell Row (Bent Over)'].map(r=>[r.load,r.best,r.total,r.sets])"),[[40,8,21,3],[40,10,25,3],[45,8,15,2]]);
+eq(tr.run("Object.keys(workoutTrendData()).length"),3);
+ok(tr.run("trendComparison(workoutTrendData()['Dumbbell Row (Bent Over)'].slice(0,2))").includes('2 more reps'));
+const mixedComparison=tr.run("trendComparison(workoutTrendData()['Dumbbell Row (Bent Over)'])");
+ok(mixedComparison.includes('5 lb heavier'));ok(mixedComparison.includes('2 fewer reps'));ok(mixedComparison.includes('partly logged'));
+ok(tr.run("trendComparison(workoutTrendData()['Pull-ups (Neutral Grip)'])").includes('same load (BW)'));
+eq(tr.run("workoutTrendData().Plank[0].unit"),'sec');
+ok(tr.run("trendComparison(workoutTrendData().Plank)").includes('5 more sec'));
+tr.run("openWorkoutTrends('Dumbbell Row (Bent Over)','load')");
+const trendsHTML=tr.el('modal').innerHTML;
+ok(trendsHTML.includes('<svg'));ok(trendsHTML.includes('Recorded weight'));ok(trendsHTML.includes('Before:'));ok(trendsHTML.includes('Feeling: Great'));
+ok(trendsHTML.includes('&lt;img'));ok(!trendsHTML.includes('<img'));
+eq(tr.memory.get('caprica_workout_v2'),trBefore);
+eq(tr.run('handleBack()'),'sheet');eq(tr.run('modalIsOpen()'),false);
+tr.run("delete S().sessionLog['2026-10-02'][0].weight;PROGRESSION['Dumbbell Row (Bent Over)'].weight='999'");
+eq(tr.run("workoutTrendData()['Dumbbell Row (Bent Over)'][2].load"),null);
+ok(tr.run("trendComparison(workoutTrendData()['Dumbbell Row (Bent Over)'])").includes('load missing'));
+ok(tr.run("trendChart(workoutTrendData()['Pull-ups (Neutral Grip)'],'load')").includes('No comparable numeric weights'));
+tr.run("S().sessionLog['2026-10-02'][0].reps=['',null,undefined,'garbage',-1]");
+eq(tr.run("workoutTrendData()['Dumbbell Row (Bent Over)'].length"),2);
+tr.run("S().sessionLog['2026-10-02'][0].reps=[0]");
+eq(tr.run("workoutTrendData()['Dumbbell Row (Bent Over)'][2].best"),0);
+tr.run("S().dayPlans['2026-10-02'][0].exercise='Dumbbell Row (Chest Supported)'");
+eq(tr.run("workoutTrendData()['Dumbbell Row (Bent Over)'].length"),2);
+eq(tr.run("workoutTrendData()['Dumbbell Row (Chest Supported)'].length"),1);
+ok(tr.run("trendComparison(workoutTrendData()['Dumbbell Row (Chest Supported)'])").includes('two days'));
+tr.run("S().dayPlans['2026-10-02'].push({exercise:'Pull-ups (Neutral Grip)',muscle:'Back',sets:1});S().sessionLog['2026-10-02'][3]={weight:'10',reps:[3]}");
+eq(tr.run("workoutTrendData()['Pull-ups (Neutral Grip)'][2].label"),'Mixed loads');
+eq(tr.run("workoutTrendData()['Pull-ups (Neutral Grip)'][2].load"),null);
+tr.run("S().dayPlans['2026-10-02'][3].exercise='__proto__'");
+eq(tr.run("workoutTrendData()['__proto__'].length"),1);
+tr.run("switchMode('travel');openWorkoutTrends()");
+ok(tr.el('modal').innerHTML.includes('No logged reps yet'));
+const pinLoad=app('2026-10-02');
+pinLoad.run("onRepChange({value:'6'},'2026-10-02',0,0)");
+eq(pinLoad.run("peekSession('2026-10-02',0).weight"),'150');
+pinLoad.run("PROGRESSION['Barbell Bench Press'].weight='170'");
+eq(pinLoad.run("workoutTrendData()['Barbell Bench Press'][0].load"),150);
+pinLoad.run("setDayType('2026-09-28','Upper A');onRepChange({value:'6'},'2026-09-28',0,0)");
+eq(pinLoad.run("peekSession('2026-09-28',0).weight"),undefined);
+const trReload=app('2026-10-02',JSON.parse(pinLoad.memory.get('caprica_workout_v2')));
+eq(trReload.run("workoutTrendData()['Barbell Bench Press'][1].load"),150);
+
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
 eq(a.run("Array.from({length:14},(_,i)=>getDayType(addDays('2026-09-21',i)))"),

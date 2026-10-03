@@ -6,6 +6,14 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-02 — v56: Workout trends
+
+Workout now offers a trends sheet with a logged-exercise selector, best-set or recorded-weight chart, latest-session comparison, and the latest 20 sessions with before/after check-ins. Exact exercise names and Gym/Travel data remain separate. Entered sets only; zero is valid, blanks/invalid values are omitted. Timed sets use seconds. Missing historical weights are not inferred from current progression; mixed loads and partial sessions are labelled. Comparisons report weight and rep changes independently instead of declaring stronger/weaker from mixed changes. Trends navigation is read-only and Android Back closes the sheet.
+
+Logging reps today now pins the displayed load in the session so future weight edits cannot shift history. Past-day edits never infer an old load. Existing fields survive.
+
+Validation: syntax and 1040 assertions passed, including historical loads, duplicates/mixed loads, variants, mode isolation, timed sets, check-ins/escaping, read-only navigation, Back, and weight snapshots/reload. Fifteen deliberate mutations caught from a complete tracked-file copy after an unmodified baseline pass. Phone layout check remains blocked: both the full and headless Chromium downloads return invalid archives; the cloud browser blocks localhost. No live user data was accessed.
+
 ## 2026-10-02 — v55: How are you feeling?
 
 Replaced the yes/no sickness selector in both workout check-ins with Great, Okay, Bad and Sick under “How are you feeling?”. Not recorded remains available. The new feeling field preserves legacy sickness entries: yes displays as Sick; no stays documented as not sick without inventing a feeling. Explicit blank feelings override legacy entries so clearing stays cleared.

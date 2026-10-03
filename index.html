@@ -441,6 +441,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .checkin-fields label{font-size:13px;color:var(--muted)}
 .checkin-fields select,.checkin-fields textarea{width:100%;min-width:0;box-sizing:border-box}
 .checkin-fields textarea{resize:vertical}
+.trend-chart{display:block;width:100%;height:auto;margin:8px 0}
+.trend-session{padding:12px;margin:10px 0;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow-wrap:anywhere}
+.trend-checkin{font-size:12px;line-height:1.6;margin-top:8px;color:var(--muted);white-space:pre-wrap}
+#trend-exercise,#trend-metric{width:100%;min-width:0;margin:6px 0 12px}
 </style>
 </head>
 <body>
@@ -861,7 +865,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1450,6 +1454,7 @@ function render(){
   } else {
     html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
   }
+  if (viewState.section === 'workout') html = '<button class="btn btn-secondary" onclick="openWorkoutTrends()">📈 Workout trends</button>' + html;
   html += '<div class="ver">' + APP_VERSION + ' · ' + (viewState.section === 'food' ? 'Food' : viewState.section === 'admin' ? 'Admin' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
     + '<a href="https://workout-tracker-app-403.netlify.app">Billy\'s Workout</a></div>';
   c.innerHTML = html;
@@ -1461,6 +1466,113 @@ function render(){
 // ------------------------------------------
 // Monthly calendar
 // ------------------------------------------
+// Workout trends are a read-only view of recorded sessions, scoped to mode.
+function trendNumber(value){
+  if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+function workoutTrendData(){
+  const result = Object.create(null);
+  for (const ds of Object.keys(S().sessionLog).sort()){
+    if (!validDateStr(ds) || ds > todayStr()) continue;
+    const plan = getPlan(ds) || [], log = S().sessionLog[ds] || {};
+    const day = Object.create(null);
+    plan.forEach((ex,i) => {
+      const sess = log[i];
+      if (!sess || !Array.isArray(sess.reps)) return;
+      const reps = sess.reps.map(trendNumber).filter(n => n !== null);
+      if (!reps.length) return;
+      const name = ex.exercise;
+      if (typeof name !== 'string') return;
+      const prog = dayProgression(ds,ex);
+      const unit = /sec/i.test((prog && prog.range) || '') ? 'sec' : 'reps';
+      const weight = typeof sess.weight === 'string' ? sess.weight.trim() : sess.weight;
+      const load = trendNumber(weight);
+      const label = load !== null ? String(load) + ' lb' : (typeof weight === 'string' && weight ? weight : 'Not recorded');
+      // Repeated exercise slots on a day are one session; mixed loads are explicit.
+      const row = day[name] || {date:ds,unit,best:0,total:0,sets:0,planned:0,load,label};
+      row.best = Math.max(row.best,...reps); row.total += reps.reduce((a,b)=>a+b,0);
+      row.sets += reps.length; row.planned += Number(ex.sets) || 0;
+      if (row.label !== label){ row.load = null; row.label = 'Mixed loads'; }
+      if (row.unit !== unit) row.unit = 'mixed';
+      day[name] = row;
+    });
+    for (const name of Object.keys(day)){
+      if (!Object.prototype.hasOwnProperty.call(result,name)) Object.defineProperty(result,name,{value:[],enumerable:true});
+      result[name].push(day[name]);
+    }
+  }
+  return result;
+}
+function trendComparison(rows){
+  if (rows.length < 2) return 'Log this exercise on two days to see a comparison.';
+  const now = rows[rows.length-1], prev = rows[rows.length-2];
+  let prefix = 'Compared with ' + fmtShort(prev.date) + ': ';
+  const change = (a,b,unit) => a === b ? 'same ' + unit : Math.abs(Math.round((a-b)*100)/100) + ' ' + (a>b ? 'more ' : 'fewer ') + unit;
+  let message;
+  if (now.unit !== prev.unit || now.unit === 'mixed') message = 'different measurement units; compare the session details below.';
+  else if (now.label === prev.label && !['Not recorded','Mixed loads'].includes(now.label)){
+    message = change(now.best,prev.best,now.unit) + ' in your best set at the same load (' + now.label + ').';
+  } else if (now.load !== null && prev.load !== null){
+    const delta = Math.round((now.load-prev.load)*100)/100;
+    message = Math.abs(delta) + ' lb ' + (delta>0 ? 'heavier' : 'lighter') + '; ' + change(now.best,prev.best,now.unit) + ' in your best set.';
+  } else message = change(now.best,prev.best,now.unit) + ' in your best set; load missing or different load types, so this is not a like-for-like strength comparison.';
+  if (now.sets !== prev.sets) message += ' Logged sets: ' + prev.sets + ' → ' + now.sets + '.';
+  if (now.sets < now.planned || prev.sets < prev.planned) message += ' One or both sessions are partly logged.';
+  return prefix + message;
+}
+function trendChart(rows,metric){
+  const recent = rows.slice(-20), unit = metric === 'load' ? 'lb' : ((recent[recent.length-1] || {}).unit || 'reps');
+  const values = recent.map(r => metric === 'load' ? r.load : (r.unit === unit && r.unit !== 'mixed' ? r.best : null));
+  const known = values.filter(v => v !== null);
+  if (!known.length) return '<div class="rule">No comparable ' + (metric === 'load' ? 'numeric weights' : 'sets') + ' recorded. Try the other chart.</div>';
+  const max = Math.max(1,...known), x = i => 42 + i*270/Math.max(1,recent.length-1), y = v => 155-v/max*120;
+  let h = '<svg class="trend-chart" viewBox="0 0 340 200" role="img" aria-label="' + esc((metric === 'load' ? 'Recorded weight' : 'Best set') + ' over the latest sessions, ' + unit) + '">';
+  h += '<title>Latest sessions, oldest to newest. Exact values appear below.</title>';
+  for (const value of [0,max/2,max]) h += '<line x1="42" y1="' + y(value) + '" x2="312" y2="' + y(value) + '" stroke="#475569"/><text x="36" y="' + (y(value)+4) + '" text-anchor="end" fill="#cbd5e1" font-size="11">' + Math.round(value*10)/10 + '</text>';
+  values.forEach((v,i) => {
+    if (v === null) return;
+    if (i && values[i-1] !== null) h += '<line x1="' + x(i-1) + '" y1="' + y(values[i-1]) + '" x2="' + x(i) + '" y2="' + y(v) + '" stroke="#38bdf8" stroke-width="2"/>';
+    h += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="4" fill="#38bdf8"><title>' + esc(recent[i].date + ': ' + v + ' ' + unit) + '</title></circle>';
+  });
+  h += '<text x="42" y="184" fill="#cbd5e1" font-size="11">' + esc(fmtShort(recent[0].date)) + '</text>';
+  if (recent.length>1) h += '<text x="312" y="184" text-anchor="end" fill="#cbd5e1" font-size="11">' + esc(fmtShort(recent[recent.length-1].date)) + '</text>';
+  return h + '</svg><div class="sub">' + esc(unit) + ' · Latest ' + recent.length + ' sessions, equally spaced. Gaps mean missing or nonnumeric values.</div>';
+}
+function trendCheckInSummary(ds,phase){
+  const entry = workoutCheckIn(ds,phase), parts=[];
+  if (CHECKIN_ENERGY.includes(entry.energy)) parts.push('Energy: ' + entry.energy);
+  const feeling = checkInFeeling(entry);
+  if (feeling) parts.push('Feeling: ' + feeling);
+  else if (!Object.prototype.hasOwnProperty.call(entry,'feeling') && entry.sick === 'no') parts.push('Previously not sick');
+  if (typeof entry.note === 'string' && entry.note.trim()) parts.push(entry.note.slice(0,500));
+  return esc(parts.length ? parts.join(' · ') : 'Not recorded');
+}
+function openWorkoutTrends(name,metric){
+  const data = workoutTrendData(), names = Object.keys(data).sort();
+  const selected = names.includes(name) ? name : names[0];
+  const chosen = metric === 'load' ? 'load' : 'best';
+  let h = '<h2>Workout trends</h2><div class="sub">' + (workoutMode === 'gym' ? 'Gym' : 'Travel') + ' · Each exercise variation is tracked separately.</div>';
+  if (!selected) h += '<div class="rule">No logged reps yet. Record a set to start your trends.</div>';
+  else {
+    h += '<label class="form-label" for="trend-exercise">Exercise</label><select class="form-select" id="trend-exercise" onchange="openWorkoutTrends(this.value,document.getElementById(\'trend-metric\').value)">';
+    h += names.map(n => '<option value="' + esc(n) + '"' + (n===selected ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
+    h += '<label class="form-label" for="trend-metric">Chart</label><select class="form-select" id="trend-metric" onchange="openWorkoutTrends(document.getElementById(\'trend-exercise\').value,this.value)"><option value="best"' + (chosen==='best'?' selected':'') + '>Best set (reps or seconds)</option><option value="load"' + (chosen==='load'?' selected':'') + '>Recorded weight (lb)</option></select>';
+    const rows = data[selected];
+    h += '<div class="rule">' + esc(trendComparison(rows)) + '</div>' + trendChart(rows,chosen);
+    h += '<div class="sub">Only entered sets count. Best set is the highest reps or seconds entered that day. Weight uses the saved session load; missing older loads are not inferred from your current weight.</div>';
+    h += '<h3>Session history</h3>';
+    rows.slice(-20).reverse().forEach(r => {
+      h += '<article class="trend-session"><b>' + esc(fmtLong(r.date)) + '</b><div>' + esc(r.label) + ' · Best: ' + r.best + ' ' + esc(r.unit) + '</div><div class="sub">' + r.sets + ' logged sets · Total: ' + r.total + ' ' + esc(r.unit) + (r.sets<r.planned ? ' · Partly logged' : '') + '</div>';
+      h += '<div class="trend-checkin"><b>Before:</b> ' + trendCheckInSummary(r.date,'start') + '<br><b>After:</b> ' + trendCheckInSummary(r.date,'end') + '</div></article>';
+    });
+  }
+  h += '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+  document.getElementById('modal').innerHTML = h;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
 function renderMonth(){
   const anchor  = fromStr(viewState.anchor);
   const month   = anchor.getMonth();
@@ -1825,7 +1937,14 @@ function onRepChange(input, ds, i, s){
   const val = input.value.trim();
   const sess = getSession(ds, i);
   if (val === '') sess.reps[s] = undefined;
-  else sess.reps[s] = parseInt(val, 10) || 0;
+  else {
+    // Pin today's displayed load on first entry; never infer an old day's load.
+    if (ds === todayStr() && (sess.weight === undefined || sess.weight === '')){
+      const ex = (getPlan(ds) || [])[i];
+      if (ex) sess.weight = getWeight(ds,i,ex.exercise);
+    }
+    sess.reps[s] = parseInt(val, 10) || 0;
+  }
 
   const res = syncProgression(ds, i);
   saveState();

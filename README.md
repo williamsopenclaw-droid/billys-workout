@@ -17,6 +17,8 @@ Tap an exercise name → **Swap exercise** to choose a variation, or use **Add E
 
 **Workout check-ins:** open **Before workout** above the exercise list or **After workout** below it. Choose energy (Weak / Okay / Good / Strong), choose how you feel (Great / Okay / Bad / Sick), and add a note. Each field saves automatically; choose Not recorded or clear the note to remove an answer. Check-ins are optional, available for today and past workouts, and do not mark exercises completed. Gym and Travel keep separate entries.
 
+**Workout trends:** tap **📈 Workout trends** in the Workout tab. Pick a logged exercise, then chart its best set (reps or seconds) or recorded weight. Compare the latest two sessions and review the latest 20 sessions with before/after check-ins. Exercise variations and Gym/Travel stay separate. Missing old weights appear as Not recorded; they are never guessed from today's working weight. Logging reps today now saves the displayed load for that session. Partly logged sessions are labelled.
+
 ### Food tab
 - **Day** — today's meals grouped by Breakfast, Morning Snack, Lunch, and so on, with your calorie and protein progress. **‹ ›** moves between days. **Edit goals** changes your daily targets.
 - **🔥 Calories burned** — under your progress on the Day screen. Tap it and type the day's total calories burned from Samsung Health, or put "Burned: 2650" in the list you send Claude. The day then shows "2,150 eaten · 2,650 burned · 500 under". Tap it again to change or remove it.
