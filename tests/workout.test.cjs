@@ -40,6 +40,39 @@ function app(date='2026-09-20', saved=null){
 }
 function eq(actual,expected){assert.deepEqual(actual === undefined ? undefined : JSON.parse(JSON.stringify(actual)),expected);checks++;}
 function ok(value){assert.ok(value);checks++;}
+// Exercise variations: actual picker, logging, reload and history isolation.
+const variants = ['Pull-ups (Narrow Grip)','Pull-ups (Wide Grip)','Pull-ups (Neutral Grip)',
+  'Dumbbell Row (Bent Over)','Dumbbell Row (Chest Supported)',
+  'Dumbbell Reverse Crossover Lunge','Dumbbell Pullover (Upper-body squat)'];
+for (const name of variants){
+  const v=app('2026-10-02'), q=JSON.stringify(name);
+  const group=name.includes('Lunge')?'Quads':'Back';
+  v.run("openAddExercise('2026-10-02')");v.el('add-group').value=group;
+  v.run('updateAddExercises()');ok(v.el('add-exercise').innerHTML.includes(name));
+  v.el('add-exercise').value=name;v.run("doAddExercise('2026-10-02')");
+  const idx=v.run("getPlan('2026-10-02').length-1");
+  eq(v.run(`getPlan('2026-10-02')[${idx}].exercise`),name);
+  eq(v.run(`getWeight('2026-10-02',${idx},${q})`),name.startsWith('Pull-ups')?'BW':'');
+  v.run(`openExerciseModal('2026-10-02',${idx})`);
+  ok(v.el('modal').innerHTML.includes(v.run(`PROGRESSION[${q}].cue`)));
+  v.run(`onRepChange({value:'8'},'2026-10-02',${idx},0);saveState()`);
+  const restored=app('2026-10-03',JSON.parse(v.memory.get('caprica_workout_v2')));
+  eq(restored.run(`getPreviousStats(${q},'2026-10-03').reps[0]`),8);
+  for(const other of variants.filter(n=>n!==name)){
+    eq(restored.run(`getPreviousStats(${JSON.stringify(other)},'2026-10-03')`),null);
+  }
+  const sw=app('2026-10-02');sw.run(`swapExercise('2026-10-02',1,${q});closeModal()`);
+  eq(sw.run("getPlan('2026-10-02')[1].exercise"),name);
+  ok(sw.el('modal').innerHTML.includes(name));
+}
+const oldVariants=app('2026-10-02');
+oldVariants.run("setDayType('2026-09-21','Upper A');onRepChange({value:'7'},'2026-09-21',1,0);onRepChange({value:'9'},'2026-09-21',2,0);saveState()");
+const keptVariants=app('2026-10-03',JSON.parse(oldVariants.memory.get('caprica_workout_v2')));
+eq(keptVariants.run("getPreviousStats('Pull-ups (Wide/Neutral)','2026-10-03').reps[0]"),7);
+eq(keptVariants.run("getPreviousStats('Dumbbell Row','2026-10-03').reps[0]"),9);
+eq(keptVariants.run("getPreviousStats('Pull-ups (Neutral Grip)','2026-10-03')"),null);
+eq(keptVariants.run("getPreviousStats('Dumbbell Row (Bent Over)','2026-10-03')"),null);
+
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
 eq(a.run("Array.from({length:14},(_,i)=>getDayType(addDays('2026-09-21',i)))"),

@@ -59,6 +59,8 @@ When William pastes a day's list and asks for it to be added:
 
 ### Features, in one line each
 
+- **Exercise options (v53):** explicit pull-up grips, row variations, reverse crossover dumbbell lunge and pullover are additive catalog entries. Keep legacy combined names and templates intact: exercise names identify history. Catalog `cue` is the fallback after a day-plan cue.
+
 - **Nutrition calendar (v52):** Food → Calendar renders existing meals and `burnedByDay`; `foodCalendarDay()` distinguishes missing data from zero. `viewState.foodMonth` is session-only and included in back-navigation snapshots. List history remains available within Calendar.
 
 - **Recipes:** `ing.portions` lets one ingredient divide differently (rice made 7 of 8); `r.cookedWeightG` enables logging by grams. Logged meals record `meal.recipe`.

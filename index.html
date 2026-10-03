@@ -540,6 +540,14 @@ const PROGRESSION = {
 // New lifts start blank rather than guessing working weights. Existing lifts
 // keep their saved progression; rep targets belong to the new day plans below.
 Object.assign(PROGRESSION, {
+  // Keep the original combined pull-up / row names for historical workouts.
+  'Pull-ups (Narrow Grip)': {group:'Back',range:'5-10',top:10,weight:'BW',cue:'Narrow overhand grip. Log bodyweight reps; chin-ups remain a separate option.'},
+  'Pull-ups (Wide Grip)': {group:'Back',range:'5-10',top:10,weight:'BW',cue:'Wide overhand grip. Log bodyweight reps.'},
+  'Pull-ups (Neutral Grip)': {group:'Back',range:'5-10',top:10,weight:'BW',cue:'Palms facing each other. Log bodyweight reps.'},
+  'Dumbbell Row (Bent Over)': {group:'Back',range:'8-12',top:12,weight:'',cue:'Bent-over row without chest support. Log weight per dumbbell and reps per arm.'},
+  'Dumbbell Row (Chest Supported)': {group:'Back',range:'8-12',top:12,weight:'',cue:'Chest supported on an incline bench. Log weight per dumbbell and reps per arm.'},
+  'Dumbbell Reverse Crossover Lunge': {group:'Quads',range:'8-12 / leg',top:12,weight:'',cue:'Reverse crossover (curtsy) lunge. Log reps per leg and weight per dumbbell; enter BW if unweighted.'},
+  'Dumbbell Pullover (Upper-body squat)': {group:'Back',range:'8-12',top:12,weight:'',cue:'Dumbbell pullover, nicknamed the upper-body squat. Log the weight of the single dumbbell.'},
   'Chin-ups': {group:'Back',range:'5-10',top:10,weight:'BW'},
   'Dumbbell Bench Press': {group:'Chest',range:'8-12',top:12,weight:''},
   'Dumbbell Overhead Press': {group:'Shoulders',range:'6-10',top:10,weight:''},
@@ -847,7 +855,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v52';
+const APP_VERSION = 'v53';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1785,7 +1793,7 @@ function openExerciseModal(ds, i){
   h += '<div class="sub">' + ex.muscle + ' · ' + (prog ? prog.range : '') + ' · ' + ex.sets + ' sets · ' + fmtShort(ds) + '</div>';
 
   if (isGymDay(ds)){
-    h += '<div class="rule">' + esc(ex.cue || 'Use controlled reps and leave 2–3 reps in reserve.') + '</div>';
+    h += '<div class="rule">' + esc(ex.cue || (prog && prog.cue) || 'Use controlled reps and leave 2–3 reps in reserve.') + '</div>';
     const current = getWeight(ds,i,ex.exercise);
     const sess = peekSession(ds,i);
     if (Number.isFinite(parseFloat(current))){

@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-02 — v53: Separate exercise variations
+
+Added narrow, wide and neutral pull-ups; bent-over and chest-supported dumbbell rows; reverse crossover dumbbell lunges; and dumbbell pullovers (upper-body squat). Available in Swap exercise, Add Exercise and custom workout templates. New dumbbell working weights start blank. Catalog cues explain grip and logging units. Legacy names and all existing templates remain intact to preserve historical identity; each new name has independent progression and previous-session lookup.
+
+Validation: syntax check, 952 assertions, and eight caught mutations from a baseline-verified copy of all tracked files. Visual phone verification blocked: Chromium download returned an invalid archive and the available browser blocked localhost. Existing picker layout is reused. No live workout or nutrition data was accessed or edited.
+
 ## 2026-09-30 — v52: Nutrition calendar (local, not published)
 
 Food now has a Calendar tab, matching the workout calendar's Sunday-first month grid. Dates show calories in, total burned, protein and the difference when both calorie values exist. Missing entries stay blank, with dashes rather than zero. Month controls, This month, accessible date buttons and a List history link reuse existing food and burn data. Future dates are disabled. Calendar position is session-only, participates in Android back navigation and never writes synced data.
