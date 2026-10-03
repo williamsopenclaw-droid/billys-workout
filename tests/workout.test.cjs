@@ -73,6 +73,56 @@ eq(keptVariants.run("getPreviousStats('Dumbbell Row','2026-10-03').reps[0]"),9);
 eq(keptVariants.run("getPreviousStats('Pull-ups (Neutral Grip)','2026-10-03')"),null);
 eq(keptVariants.run("getPreviousStats('Dumbbell Row (Bent Over)','2026-10-03')"),null);
 
+// Check-ins: optional, independent start/end and mode, preserved through storage.
+const ci=app('2026-10-02');
+const untouchedCI=ci.memory.get('caprica_workout_v2');
+const ciHTML=ci.run("renderDay('2026-10-02',true)");
+ok(ciHTML.indexOf('Before workout') < ciHTML.indexOf('sheet-header'));
+ok(ciHTML.indexOf('After workout') > ciHTML.indexOf('sheet-header'));
+eq(ci.memory.get('caprica_workout_v2'),untouchedCI);
+eq(ci.run("renderWorkoutCheckIn('2026-10-05','start')"),'');
+ok(!ci.run("renderDay('2026-10-03',false)").includes('optional check-in'));
+const ciHandler=ciHTML.match(/onchange="(saveWorkoutCheckIn[^\"]+)"/)[1];
+ci.run('(function(){'+ciHandler+'}).call({value:"Weak"})');
+eq(ci.run("workoutCheckIn('2026-10-02','start').energy"),'Weak');
+for(const energy of ['Okay','Good','Strong']){
+  ok(ci.run(`saveWorkoutCheckIn('2026-10-02','start','energy','${energy}')`));
+  eq(ci.run("workoutCheckIn('2026-10-02','start').energy"),energy);
+}
+ci.run("saveWorkoutCheckIn('2026-10-02','start','sick','yes');saveWorkoutCheckIn('2026-10-02','end','energy','Okay');saveWorkoutCheckIn('2026-10-02','end','sick','no')");
+ci.run("saveWorkoutCheckIn('2026-10-02','end','note','Felt better after warming up')");
+eq(ci.run("isPinned('2026-10-02')"),true);
+eq(ci.run("hasLog('2026-10-02')"),false);
+ok(ci.run("!!S().dayPlans['2026-10-02']"));
+ci.run("S().checkIns.futureKey={keep:true};S().checkIns['2026-10-02'].futureDay=42;S().checkIns['2026-10-02'].start.futureField='keep';saveWorkoutCheckIn('2026-10-02','start','note','<script>test</script>')");
+const ciSaved=JSON.parse(ci.memory.get('caprica_workout_v2'));
+const ciReload=app('2026-10-02',ciSaved);
+eq(ciReload.run("S().checkIns.futureKey"),{keep:true});
+eq(ciReload.run("S().checkIns['2026-10-02'].futureDay"),42);
+eq(ciReload.run("workoutCheckIn('2026-10-02','start').futureField"),'keep');
+eq(ciReload.run("workoutCheckIn('2026-10-02','end')"),{energy:'Okay',sick:'no',note:'Felt better after warming up'});
+const ciRendered=ciReload.run("renderDay('2026-10-02',true)");
+ok(ciRendered.includes('&lt;script&gt;test&lt;/script&gt;'));
+ok(!ciRendered.includes('<script>test</script>'));
+ok(ciRendered.includes('value="Strong" selected'));
+ok(ciRendered.includes('value="yes" selected'));
+ok(ciRendered.includes('value="no" selected'));
+ciReload.run("saveWorkoutCheckIn('2026-10-02','start','energy','');saveWorkoutCheckIn('2026-10-02','start','sick','');saveWorkoutCheckIn('2026-10-02','start','note','')");
+eq(ciReload.run("workoutCheckIn('2026-10-02','start')"),{energy:'',sick:'',note:'',futureField:'keep'});
+const ciBefore=ciReload.memory.get('caprica_workout_v2');
+for(const args of ["'bad','start','energy','Good'","'2026-10-05','start','energy','Good'","'2026-10-02','middle','energy','Good'","'2026-10-02','start','energy','Fantastic'","'2026-10-02','start','sick','maybe'","'2026-10-02','start','extra','bad'","'2026-10-02','start','note',null"]){
+ eq(ciReload.run('saveWorkoutCheckIn('+args+')'),false);
+}
+eq(ciReload.memory.get('caprica_workout_v2'),ciBefore);
+ciReload.run("saveWorkoutCheckIn('2026-10-02','end','note','x'.repeat(600))");
+eq(ciReload.run("workoutCheckIn('2026-10-02','end').note.length"),500);
+ciReload.run("switchMode('travel');setDayType('2026-10-02','Upper')");
+eq(ciReload.run("workoutCheckIn('2026-10-02','start')"),{});
+ciReload.run("saveWorkoutCheckIn('2026-10-02','start','energy','Weak');switchMode('gym')");
+eq(ciReload.run("workoutCheckIn('2026-10-02','start').energy"),'');
+ciReload.run("setDayType('2026-10-01','Rest')");
+eq(ciReload.run("saveWorkoutCheckIn('2026-10-01','start','energy','Good')"),false);
+
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
 eq(a.run("Array.from({length:14},(_,i)=>getDayType(addDays('2026-09-21',i)))"),

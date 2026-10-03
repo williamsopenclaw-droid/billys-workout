@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-02 — v54: Optional before/after workout check-ins
+
+Collapsible Before workout and After workout controls now surround each workout's exercise list. Energy is Weak / Okay / Good / Strong; feeling sick is Yes / No with an explicit Not recorded state; notes are optional and capped at 500 characters. Changes save immediately. Entries remain independent by date, phase and Gym/Travel mode, are included in normal backups/sync, and preserve unknown fields. Saving pins the workout but does not mark it completed. Past entries can be edited; future dates and rest days cannot receive check-ins. Feeling data does not change weights or scheduling rules.
+
+Validation: syntax check, 989 assertions, 13 caught mutations from a baseline-verified full tracked-file copy. The phone browser check remains unavailable: the browser download failed and the available cloud browser blocks localhost (verified during v53). No live user workout/food data was read or edited.
+
 ## 2026-10-02 — v53: Separate exercise variations
 
 Added narrow, wide and neutral pull-ups; bent-over and chest-supported dumbbell rows; reverse crossover dumbbell lunges; and dumbbell pullovers (upper-body squat). Available in Swap exercise, Add Exercise and custom workout templates. New dumbbell working weights start blank. Catalog cues explain grip and logging units. Legacy names and all existing templates remain intact to preserve historical identity; each new name has independent progression and previous-session lookup.

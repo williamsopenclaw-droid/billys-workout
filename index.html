@@ -435,6 +435,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .nc-help{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 0}
 @media(max-width:360px){#food-tab-nav .section-seg{font-size:11px;gap:2px}.nutrition-calendar .nc-value{font-size:9px}}
 
+.workout-checkin{margin:10px 0;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.workout-checkin summary{padding:12px;cursor:pointer;font-size:14px;font-weight:600}
+.checkin-fields{padding:0 12px 12px;display:grid;gap:8px;min-width:0}
+.checkin-fields label{font-size:13px;color:var(--muted)}
+.checkin-fields select,.checkin-fields textarea{width:100%;min-width:0;box-sizing:border-box}
+.checkin-fields textarea{resize:vertical}
 </style>
 </head>
 <body>
@@ -835,7 +841,7 @@ const TEMPLATES = {
 let workoutMode = 'gym';
 
 function blankStore(){
-  return { dayTypes:{}, dayPlans:{}, sessionLog:{}, dayNotes:{}, exNotes:{}, customTypes:{} };
+  return { dayTypes:{}, dayPlans:{}, sessionLog:{}, dayNotes:{}, exNotes:{}, customTypes:{}, checkIns:{} };
 }
 let store = { gym: blankStore(), travel: blankStore() };
 
@@ -855,7 +861,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1585,6 +1591,46 @@ function renderWeek(){
   return html;
 }
 
+// Optional per-workout check-ins. Separate from exercise completion and UI state.
+const CHECKIN_ENERGY = ['Weak','Okay','Good','Strong'];
+function workoutCheckIn(ds, phase){
+  const day = S().checkIns && S().checkIns[ds];
+  const entry = day && day[phase];
+  return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+}
+function saveWorkoutCheckIn(ds, phase, field, value){
+  if (!validDateStr(ds) || ds > todayStr() || !['start','end'].includes(phase)
+      || !['energy','sick','note'].includes(field) || typeof value !== 'string') return false;
+  if (field === 'energy' && value !== '' && !CHECKIN_ENERGY.includes(value)) return false;
+  if (field === 'sick' && !['','yes','no'].includes(value)) return false;
+  if (getDayType(ds) === 'Rest') return false;
+  const old = workoutCheckIn(ds, phase);
+  const next = field === 'note' ? value.slice(0,500) : value;
+  if ((old[field] || '') === next) return true;
+  pinIfNeeded(ds);
+  const all = S().checkIns || {};
+  S().checkIns = Object.assign({}, all, {
+    [ds]: Object.assign({}, all[ds], {
+      [phase]: Object.assign({}, old, {[field]:next})
+    })
+  });
+  saveState();
+  return true;
+}
+function renderWorkoutCheckIn(ds, phase){
+  if (ds > todayStr()) return '';
+  const entry = workoutCheckIn(ds,phase), id = 'checkin-' + ds + '-' + phase;
+  const handler = field => "saveWorkoutCheckIn('" + ds + "','" + phase + "','" + field + "',this.value)";
+  let h = '<details class="workout-checkin"><summary>' + (phase === 'start' ? 'Before workout' : 'After workout') + ' · optional check-in</summary>';
+  h += '<div class="checkin-fields"><label for="' + id + '-energy">Energy</label>';
+  h += '<select class="form-select" id="' + id + '-energy" onchange="' + handler('energy') + '">';
+  h += [''].concat(CHECKIN_ENERGY).map(v => '<option value="' + v + '"' + (entry.energy === v ? ' selected' : '') + '>' + (v || 'Not recorded') + '</option>').join('') + '</select>';
+  h += '<label for="' + id + '-sick">Feeling sick?</label><select class="form-select" id="' + id + '-sick" onchange="' + handler('sick') + '">';
+  h += [['','Not recorded'],['yes','Yes'],['no','No']].map(([v,label]) => '<option value="' + v + '"' + (entry.sick === v ? ' selected' : '') + '>' + label + '</option>').join('') + '</select>';
+  h += '<label for="' + id + '-note">Note (optional)</label><textarea class="form-input" id="' + id + '-note" maxlength="500" rows="2" oninput="' + handler('note') + '">' + esc(typeof entry.note === 'string' ? entry.note.slice(0,500) : '') + '</textarea>';
+  return h + '<div class="sub">Changes save automatically with this workout.</div></div></details>';
+}
+
 function renderDay(ds, isToday){
   const type = getDayType(ds);
   const dn = S().dayNotes[ds] || '';
@@ -1611,6 +1657,7 @@ function renderDay(ds, isToday){
   if (isGymDay(ds)) html += '<div class="rule">Working sets only; warm up first. Leave 2–3 reps in reserve.<br>'
     + 'Rest 2–3 min on main lifts, 60–90 sec on accessories. Tap an exercise for guidance.<br>'
     + 'Review saved weights before starting. Blank weights need your own starting load.</div>';
+  html += renderWorkoutCheckIn(ds, 'start');
   const maxSets = Math.max.apply(null, plan.map(e => e.sets).concat([2]));
   const widths = maxSets <= 3 ? '--exercise-width:44%;--weight-width:14%;--set-width:' + (28/maxSets) + '%;--check-width:6%;--notes-width:8%' : '';
   html += '<div class="sheet" style="' + widths + '"><div class="sheet-header">';
@@ -1620,6 +1667,8 @@ function renderDay(ds, isToday){
 
   plan.forEach((ex, i) => { html += renderExRow(ds, ex, i); });
   html += '</div>';
+
+  html += renderWorkoutCheckIn(ds, 'end');
 
   // Day notes
   const open = dn.trim() ? ' open' : '';

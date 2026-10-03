@@ -59,6 +59,8 @@ When William pastes a day's list and asks for it to be added:
 
 ### Features, in one line each
 
+- **Workout check-ins (v54):** `store[mode].checkIns[date].start/end` holds optional `energy`, `sick` (yes/no/blank), and `note` (500 chars). `saveWorkoutCheckIn` validates, pins, preserves unknown fields, and uses `saveState`; no exercise completion is inferred. Inline inputs save immediately without repainting/focus loss. Future dates and rest days do not accept entries.
+
 - **Exercise options (v53):** explicit pull-up grips, row variations, reverse crossover dumbbell lunge and pullover are additive catalog entries. Keep legacy combined names and templates intact: exercise names identify history. Catalog `cue` is the fallback after a day-plan cue.
 
 - **Nutrition calendar (v52):** Food → Calendar renders existing meals and `burnedByDay`; `foodCalendarDay()` distinguishes missing data from zero. `viewState.foodMonth` is session-only and included in back-navigation snapshots. List history remains available within Calendar.
