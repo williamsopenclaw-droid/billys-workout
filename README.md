@@ -15,7 +15,7 @@ The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in
 
 Tap an exercise name → **Swap exercise** to choose a variation, or use **Add Exercise**. Under **Back** you'll find narrow/wide/neutral pull-ups, bent-over/chest-supported dumbbell rows, and the dumbbell pullover (upper-body squat). The reverse crossover dumbbell lunge is under **Quads**. Each variation has its own working weight and previous-session history. New dumbbell weights start blank. Existing workouts retain their original exercise names.
 
-**Workout check-ins:** open **Before workout** above the exercise list or **After workout** below it. Choose energy (Weak / Okay / Good / Strong), optionally record whether you feel sick, and add a note. Each field saves automatically; choose Not recorded or clear the note to remove an answer. Check-ins are optional, available for today and past workouts, and do not mark exercises completed. Gym and Travel keep separate entries.
+**Workout check-ins:** open **Before workout** above the exercise list or **After workout** below it. Choose energy (Weak / Okay / Good / Strong), choose how you feel (Great / Okay / Bad / Sick), and add a note. Each field saves automatically; choose Not recorded or clear the note to remove an answer. Check-ins are optional, available for today and past workouts, and do not mark exercises completed. Gym and Travel keep separate entries.
 
 ### Food tab
 - **Day** — today's meals grouped by Breakfast, Morning Snack, Lunch, and so on, with your calorie and protein progress. **‹ ›** moves between days. **Edit goals** changes your daily targets.

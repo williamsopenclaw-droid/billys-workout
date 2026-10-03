@@ -59,7 +59,7 @@ When William pastes a day's list and asks for it to be added:
 
 ### Features, in one line each
 
-- **Workout check-ins (v54):** `store[mode].checkIns[date].start/end` holds optional `energy`, `sick` (yes/no/blank), and `note` (500 chars). `saveWorkoutCheckIn` validates, pins, preserves unknown fields, and uses `saveState`; no exercise completion is inferred. Inline inputs save immediately without repainting/focus loss. Future dates and rest days do not accept entries.
+- **Workout check-ins (v55):** `store[mode].checkIns[date].start/end` holds optional `energy`, `feeling` (Great/Okay/Bad/Sick/blank), and `note` (500 chars). `saveWorkoutCheckIn` validates, pins, preserves unknown fields, and uses `saveState`; no exercise completion is inferred. Inline inputs save immediately without repainting/focus loss. Future dates and rest days do not accept entries. Legacy `sick` values survive: yes displays as Sick; no is shown as previously not sick without guessing a feeling. An explicit `feeling`, including blank, overrides legacy values.
 
 - **Exercise options (v53):** explicit pull-up grips, row variations, reverse crossover dumbbell lunge and pullover are additive catalog entries. Keep legacy combined names and templates intact: exercise names identify history. Catalog `cue` is the fallback after a day-plan cue.
 

@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-02 — v55: How are you feeling?
+
+Replaced the yes/no sickness selector in both workout check-ins with Great, Okay, Bad and Sick under “How are you feeling?”. Not recorded remains available. The new feeling field preserves legacy sickness entries: yes displays as Sick; no stays documented as not sick without inventing a feeling. Explicit blank feelings override legacy entries so clearing stays cleared.
+
+Validation: the initial implementation passed syntax and the 989-assertion Node suite before the execution service stalled. Reconstructed that change against current main via GitHub; full app syntax and 149 exercise/check-in assertions passed in an independent JavaScript runtime, including save/reload and old-entry compatibility. Seven targeted mutations were caught after the unmutated baseline passed. Added the compatibility assertions to the existing Node suite. Full Node rerun and phone browser verification remain blocked by the execution/browser environment.
+
 ## 2026-10-02 — v54: Optional before/after workout check-ins
 
 Collapsible Before workout and After workout controls now surround each workout's exercise list. Energy is Weak / Okay / Good / Strong; feeling sick is Yes / No with an explicit Not recorded state; notes are optional and capped at 500 characters. Changes save immediately. Entries remain independent by date, phase and Gym/Travel mode, are included in normal backups/sync, and preserve unknown fields. Saving pins the workout but does not mark it completed. Past entries can be edited; future dates and rest days cannot receive check-ins. Feeling data does not change weights or scheduling rules.

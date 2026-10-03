@@ -861,7 +861,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1593,20 +1593,26 @@ function renderWeek(){
 
 // Optional per-workout check-ins. Separate from exercise completion and UI state.
 const CHECKIN_ENERGY = ['Weak','Okay','Good','Strong'];
+const CHECKIN_FEELING = ['Great','Okay','Bad','Sick'];
 function workoutCheckIn(ds, phase){
   const day = S().checkIns && S().checkIns[ds];
   const entry = day && day[phase];
   return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
 }
+function checkInFeeling(entry){
+  // An explicit blank overrides legacy sickness, so clearing stays cleared.
+  if (Object.prototype.hasOwnProperty.call(entry,'feeling')) return CHECKIN_FEELING.includes(entry.feeling) ? entry.feeling : '';
+  return entry.sick === 'yes' ? 'Sick' : '';
+}
 function saveWorkoutCheckIn(ds, phase, field, value){
   if (!validDateStr(ds) || ds > todayStr() || !['start','end'].includes(phase)
-      || !['energy','sick','note'].includes(field) || typeof value !== 'string') return false;
+      || !['energy','feeling','note'].includes(field) || typeof value !== 'string') return false;
   if (field === 'energy' && value !== '' && !CHECKIN_ENERGY.includes(value)) return false;
-  if (field === 'sick' && !['','yes','no'].includes(value)) return false;
+  if (field === 'feeling' && value !== '' && !CHECKIN_FEELING.includes(value)) return false;
   if (getDayType(ds) === 'Rest') return false;
   const old = workoutCheckIn(ds, phase);
   const next = field === 'note' ? value.slice(0,500) : value;
-  if ((old[field] || '') === next) return true;
+  if ((old[field] || '') === next && (field !== 'feeling' || Object.prototype.hasOwnProperty.call(old,'feeling'))) return true;
   pinIfNeeded(ds);
   const all = S().checkIns || {};
   S().checkIns = Object.assign({}, all, {
@@ -1625,8 +1631,9 @@ function renderWorkoutCheckIn(ds, phase){
   h += '<div class="checkin-fields"><label for="' + id + '-energy">Energy</label>';
   h += '<select class="form-select" id="' + id + '-energy" onchange="' + handler('energy') + '">';
   h += [''].concat(CHECKIN_ENERGY).map(v => '<option value="' + v + '"' + (entry.energy === v ? ' selected' : '') + '>' + (v || 'Not recorded') + '</option>').join('') + '</select>';
-  h += '<label for="' + id + '-sick">Feeling sick?</label><select class="form-select" id="' + id + '-sick" onchange="' + handler('sick') + '">';
-  h += [['','Not recorded'],['yes','Yes'],['no','No']].map(([v,label]) => '<option value="' + v + '"' + (entry.sick === v ? ' selected' : '') + '>' + label + '</option>').join('') + '</select>';
+  h += '<label for="' + id + '-feeling">How are you feeling?</label><select class="form-select" id="' + id + '-feeling" onchange="' + handler('feeling') + '">';
+  h += [''].concat(CHECKIN_FEELING).map(v => '<option value="' + v + '"' + (checkInFeeling(entry) === v ? ' selected' : '') + '>' + (v || 'Not recorded') + '</option>').join('') + '</select>';
+  if (!Object.prototype.hasOwnProperty.call(entry,'feeling') && entry.sick === 'no') h += '<div class="sub">Previously recorded: not sick. Choose how you felt above.</div>';
   h += '<label for="' + id + '-note">Note (optional)</label><textarea class="form-input" id="' + id + '-note" maxlength="500" rows="2" oninput="' + handler('note') + '">' + esc(typeof entry.note === 'string' ? entry.note.slice(0,500) : '') + '</textarea>';
   return h + '<div class="sub">Changes save automatically with this workout.</div></div></details>';
 }

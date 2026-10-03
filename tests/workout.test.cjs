@@ -89,7 +89,7 @@ for(const energy of ['Okay','Good','Strong']){
   ok(ci.run(`saveWorkoutCheckIn('2026-10-02','start','energy','${energy}')`));
   eq(ci.run("workoutCheckIn('2026-10-02','start').energy"),energy);
 }
-ci.run("saveWorkoutCheckIn('2026-10-02','start','sick','yes');saveWorkoutCheckIn('2026-10-02','end','energy','Okay');saveWorkoutCheckIn('2026-10-02','end','sick','no')");
+ci.run("saveWorkoutCheckIn('2026-10-02','start','feeling','Sick');saveWorkoutCheckIn('2026-10-02','end','energy','Okay');saveWorkoutCheckIn('2026-10-02','end','feeling','Okay')");
 ci.run("saveWorkoutCheckIn('2026-10-02','end','note','Felt better after warming up')");
 eq(ci.run("isPinned('2026-10-02')"),true);
 eq(ci.run("hasLog('2026-10-02')"),false);
@@ -100,17 +100,17 @@ const ciReload=app('2026-10-02',ciSaved);
 eq(ciReload.run("S().checkIns.futureKey"),{keep:true});
 eq(ciReload.run("S().checkIns['2026-10-02'].futureDay"),42);
 eq(ciReload.run("workoutCheckIn('2026-10-02','start').futureField"),'keep');
-eq(ciReload.run("workoutCheckIn('2026-10-02','end')"),{energy:'Okay',sick:'no',note:'Felt better after warming up'});
+eq(ciReload.run("workoutCheckIn('2026-10-02','end')"),{energy:'Okay',feeling:'Okay',note:'Felt better after warming up'});
 const ciRendered=ciReload.run("renderDay('2026-10-02',true)");
 ok(ciRendered.includes('&lt;script&gt;test&lt;/script&gt;'));
 ok(!ciRendered.includes('<script>test</script>'));
 ok(ciRendered.includes('value="Strong" selected'));
-ok(ciRendered.includes('value="yes" selected'));
-ok(ciRendered.includes('value="no" selected'));
-ciReload.run("saveWorkoutCheckIn('2026-10-02','start','energy','');saveWorkoutCheckIn('2026-10-02','start','sick','');saveWorkoutCheckIn('2026-10-02','start','note','')");
-eq(ciReload.run("workoutCheckIn('2026-10-02','start')"),{energy:'',sick:'',note:'',futureField:'keep'});
+ok(ciRendered.includes('value="Sick" selected'));
+ok(ciRendered.includes('value="Okay" selected'));
+ciReload.run("saveWorkoutCheckIn('2026-10-02','start','energy','');saveWorkoutCheckIn('2026-10-02','start','feeling','');saveWorkoutCheckIn('2026-10-02','start','note','')");
+eq(ciReload.run("workoutCheckIn('2026-10-02','start')"),{energy:'',feeling:'',note:'',futureField:'keep'});
 const ciBefore=ciReload.memory.get('caprica_workout_v2');
-for(const args of ["'bad','start','energy','Good'","'2026-10-05','start','energy','Good'","'2026-10-02','middle','energy','Good'","'2026-10-02','start','energy','Fantastic'","'2026-10-02','start','sick','maybe'","'2026-10-02','start','extra','bad'","'2026-10-02','start','note',null"]){
+for(const args of ["'bad','start','energy','Good'","'2026-10-05','start','energy','Good'","'2026-10-02','middle','energy','Good'","'2026-10-02','start','energy','Fantastic'","'2026-10-02','start','feeling','maybe'","'2026-10-02','start','extra','bad'","'2026-10-02','start','note',null"]){
  eq(ciReload.run('saveWorkoutCheckIn('+args+')'),false);
 }
 eq(ciReload.memory.get('caprica_workout_v2'),ciBefore);
@@ -122,6 +122,30 @@ ciReload.run("saveWorkoutCheckIn('2026-10-02','start','energy','Weak');switchMod
 eq(ciReload.run("workoutCheckIn('2026-10-02','start').energy"),'');
 ciReload.run("setDayType('2026-10-01','Rest')");
 eq(ciReload.run("saveWorkoutCheckIn('2026-10-01','start','energy','Good')"),false);
+
+
+// Feeling choices and compatibility with earlier sickness entries.
+const feeling=app('2026-10-02');
+const feelingMarkup=feeling.run("renderWorkoutCheckIn('2026-10-02','end')");
+ok(feelingMarkup.includes('How are you feeling?'));
+ok(!feelingMarkup.includes('Feeling sick?'));
+for(const value of ['Great','Okay','Bad','Sick']){
+ ok(feelingMarkup.includes('value="'+value+'"'));
+ feeling.run("saveWorkoutCheckIn('2026-10-02','end','feeling',"+JSON.stringify(value)+")");
+ const fr=app('2026-10-02',JSON.parse(feeling.memory.get('caprica_workout_v2')));
+ eq(fr.run("workoutCheckIn('2026-10-02','end').feeling"),value);
+}
+feeling.run("S().checkIns['2026-10-02']={start:{sick:'yes',future:42},end:{sick:'no'}};saveState()");
+const legacyFeeling=app('2026-10-02',JSON.parse(feeling.memory.get('caprica_workout_v2')));
+ok(legacyFeeling.run("renderWorkoutCheckIn('2026-10-02','start')").includes('value="Sick" selected'));
+ok(legacyFeeling.run("renderWorkoutCheckIn('2026-10-02','end')").includes('Previously recorded: not sick'));
+eq(legacyFeeling.run("checkInFeeling(workoutCheckIn('2026-10-02','end'))"),'');
+legacyFeeling.run("saveWorkoutCheckIn('2026-10-02','start','feeling','');saveWorkoutCheckIn('2026-10-02','end','feeling','Great')");
+const newFeeling=app('2026-10-02',JSON.parse(legacyFeeling.memory.get('caprica_workout_v2')));
+eq(newFeeling.run("checkInFeeling(workoutCheckIn('2026-10-02','start'))"),'');
+eq(newFeeling.run("workoutCheckIn('2026-10-02','start')"),{sick:'yes',future:42,feeling:''});
+eq(newFeeling.run("checkInFeeling(workoutCheckIn('2026-10-02','end'))"),'Great');
+ok(!newFeeling.run("renderWorkoutCheckIn('2026-10-02','end')").includes('Previously recorded'));
 
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
