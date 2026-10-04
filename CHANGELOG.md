@@ -6,6 +6,12 @@ When you ship something, add an entry at the top.
 
 ---
 
+## 2026-10-03 — v58: Simpler calendar navigation
+
+Removed the Weekly workout view and renamed Monthly to Calendar. Calendar, Gym and Travel share one control row. Previous/next arrows flank the month name; Today sits below the heading. The daily workout screen and Gym/Travel histories are unchanged. Month navigation handles year boundaries and month-end dates without saving synced data.
+
+Validation: syntax and 1072 assertions passed; seven deliberate mutations caught from a passing tracked-file copy. Browser checks passed at 320, 375 and 414px (including the longest Admin badge): no horizontal overflow, controls share a row, month arrows/Today/Gym/Travel work, no page errors. Screenshot reviewed and Today alignment corrected. Browser ran on isolated localhost with external requests blocked, fetch stubbed, and no sync code.
+
 ## 2026-10-02 — v57: Tap an exercise for its trends
 
 Exercise names in daily/weekly workout rows now open the selected exercise's trends directly. Exercise settings remains available from that sheet for swaps, set counts, guidance and progression. Changing chart metrics retains the original date/slot context. Exercises with no history stay selected and show an empty state rather than silently switching to a different exercise. The overall Workout trends button remains available.

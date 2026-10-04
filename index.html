@@ -56,8 +56,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .mode-seg:last-child{border-radius:0 9px 9px 0}
 .mode-seg:not(.active):active{background:rgba(56,189,248,0.1)}
 
-/* View bar — weekly/monthly toggle + nav */
-.view-bar{display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+/* Calendar and Gym/Travel controls share one row. */
+.view-bar{display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:nowrap}
 .view-toggle{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;gap:0}
 .view-seg{display:flex;align-items:center;gap:5px;padding:7px 12px;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
 .view-seg.active{background:var(--accent);color:var(--bg);font-weight:600}
@@ -445,6 +445,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .trend-session{padding:12px;margin:10px 0;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow-wrap:anywhere}
 .trend-checkin{font-size:12px;line-height:1.6;margin-top:8px;color:var(--muted);white-space:pre-wrap}
 #trend-exercise,#trend-metric{width:100%;min-width:0;margin:6px 0 12px}
+.calendar-month-nav{display:flex;justify-content:center;align-items:center;gap:10px;margin:12px 0 6px}
+.calendar-month-nav .week-badge{min-width:0;padding:8px 10px;letter-spacing:0;font-size:13px}
+.month-arrow{min-width:40px;min-height:40px;padding:8px}
+.calendar-today{display:flex;justify-content:center;margin:0 0 12px}
+#view-bar .mode-seg{font-size:12px;padding:8px 12px}
+#view-bar .view-seg{font-size:12px;padding:8px 12px}
+@media(max-width:360px){#view-bar{gap:6px}#view-bar .mode-seg,#view-bar .view-seg{padding:8px;font-size:11px}.calendar-month-nav{gap:6px}}
 </style>
 </head>
 <body>
@@ -470,16 +477,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
   </div>
   <div class="view-bar" id="view-bar">
     <div class="view-toggle" id="view-toggle">
-      <button class="view-seg" data-view="weekly" onclick="setViewMode('weekly')">📅 Weekly</button>
-      <button class="view-seg active" data-view="monthly" onclick="setViewMode('monthly')">🗓 Monthly</button>
+      <button class="view-seg active" data-view="monthly" onclick="setViewMode('monthly')">🗓 Calendar</button>
     </div>
-    <div class="week-nav" id="week-nav">
-      <button class="tool-btn nav-btn" onclick="navPeriod(-1)">◀ Month</button>
-      <button class="tool-btn nav-btn" onclick="navToday()">📍 Today</button>
-      <button class="tool-btn nav-btn" onclick="navPeriod(1)">Month ▶</button>
-    </div>
-  </div>
-  <div class="mode-toggle">
     <div class="mode-toggle-inner" id="mode-toggle">
       <button class="mode-seg active" data-mode="gym" onclick="switchMode('gym')">🏋️ Gym</button>
       <button class="mode-seg" data-mode="travel" onclick="switchMode('travel')">🎒 Travel</button>
@@ -865,7 +864,7 @@ let food = blankFood();
 
 // The one place the app's version is written in index.html (label, backups, Admin).
 // sw.js VERSION must match — bump both together, once per deploy (Rule #10).
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 const SECTIONS = ['workout', 'food', 'admin'];
 let viewState = { mode:'monthly', section:'workout', foodTab:'today', anchor: todayStr() };
 
@@ -1363,28 +1362,22 @@ function loadState(){
 // VIEW NAVIGATION
 // ==========================================
 function setViewMode(mode){
+  mode = 'monthly'; // Calendar is the only overview; old weekly calls also land here.
   viewState.mode = mode;
   document.querySelectorAll('.view-seg').forEach(b => b.classList.toggle('active', b.dataset.view === mode));
-  updateNavLabels();
   render();
 }
 
 function navPeriod(delta){
-  if (viewState.mode === 'monthly'){
-    const d = fromStr(viewState.anchor);
-    d.setDate(1);
-    d.setMonth(d.getMonth() + delta);
-    viewState.anchor = toStr(d);
-  } else {
-    viewState.anchor = addDays(viewState.anchor, delta * 7);
-  }
-  updateNavLabels();
+  const d = fromStr(viewState.anchor);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + delta);
+  viewState.anchor = toStr(d);
   render();
 }
 
 function navToday(){
   viewState.anchor = todayStr();
-  updateNavLabels();
   render();
   setTimeout(scrollToToday, 150);
 }
@@ -1408,19 +1401,8 @@ function backToMonth(){
   const vb = document.getElementById('view-bar');
   if (vb) vb.style.display = '';
   document.getElementById('mode-toggle').style.display = '';
-  updateNavLabels();
   render();
   navRecord(prev);
-}
-
-function updateNavLabels(){
-  if (viewState.mode === 'day') return;
-  const btns = document.querySelectorAll('#week-nav .nav-btn');
-  if (btns.length >= 3){
-    const unit = viewState.mode === 'monthly' ? 'Month' : 'Week';
-    btns[0].textContent = '◀ ' + unit;
-    btns[2].textContent = unit + ' ▶';
-  }
 }
 
 // ==========================================
@@ -1441,7 +1423,6 @@ function render(){
         : (workoutMode === 'gym' ? 'Monday–Friday · Upper / Lower' : 'Travel · Upper / Lower / Arms');
     }
   }
-  updateNavLabels();
 
   const c = document.getElementById('workout-container');
   let html;
@@ -1452,7 +1433,7 @@ function render(){
   } else if (viewState.mode === 'day'){
     html = renderDayView(viewState.dayAnchor);
   } else {
-    html = (viewState.mode === 'monthly' ? renderMonth() : renderWeek());
+    html = renderMonth();
   }
   if (viewState.section === 'workout') html = '<button class="btn btn-secondary" onclick="openWorkoutTrends()">📈 Workout trends</button>' + html;
   html += '<div class="ver">' + APP_VERSION + ' · ' + (viewState.section === 'food' ? 'Food' : viewState.section === 'admin' ? 'Admin' : (workoutMode === 'gym' ? 'Weekday Upper / Lower · Small weight steps' : 'Travel · 3-Day Rotation')) + ' · '
@@ -1594,9 +1575,13 @@ function renderMonth(){
 
   const rows = Math.ceil((dowOf(first) + lastDay) / 7);
 
-  let html = '<div class="week-header">';
+  let html = '<div class="calendar-month-nav" aria-label="Month navigation">';
+  html += '<button class="tool-btn month-arrow" aria-label="Previous month" onclick="navPeriod(-1)">◀</button>';
   html += '<div class="week-badge">🗓 ' + anchor.toLocaleDateString('en-US',{month:'long',year:'numeric'}) + '</div>';
+  html += '<button class="tool-btn month-arrow" aria-label="Next month" onclick="navPeriod(1)">▶</button>';
   html += '</div>';
+
+  html += '<div class="calendar-today"><button class="tool-btn nav-btn" onclick="navToday()">Today</button></div>';
 
   // Legend
   html += '<div class="legend">';
@@ -1695,21 +1680,6 @@ function renderDayView(ds){
     h += renderDay(ds, ds === todayStr());
   }
   return h;
-}
-
-// ------------------------------------------
-// Weekly view
-// ------------------------------------------
-function renderWeek(){
-  const sunday = sundayOf(viewState.anchor);
-  const today  = todayStr();
-  let html = '<div class="week-header"><div class="week-badge">📅 Week of ' + fmtShort(sunday) + '</div></div>';
-
-  for (let i = 0; i < 7; i++){
-    const ds = addDays(sunday, i);
-    html += renderDay(ds, ds === today);
-  }
-  return html;
 }
 
 // Optional per-workout check-ins. Separate from exercise completion and UI state.
@@ -2258,7 +2228,7 @@ function navApply(s){
   const workoutChrome = s.section === 'workout' && viewState.mode !== 'day';
   ['view-bar', 'mode-toggle'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = workoutChrome ? '' : 'none'; });
   document.querySelectorAll('.section-seg').forEach(b => { if (b.dataset.section) b.classList.toggle('active', b.dataset.section === s.section); });
-  saveViewPrefs(); updateNavLabels(); render();
+  saveViewPrefs(); render();
 }
 function modalIsOpen(){ const ov = document.getElementById('modal-overlay'); return !!(ov && ov.classList.contains('show')); }
 function editorSnapshot(d){ return JSON.stringify([d.name || '', d.time || '', d.category || '', d.notes || '', d.items || []]); }

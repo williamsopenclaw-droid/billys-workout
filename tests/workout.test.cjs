@@ -232,6 +232,41 @@ eq(dailyTrend.run('handleBack()'),'sheet');
 dailyTrend.run('openWorkoutTrends()');
 ok(!dailyTrend.el('modal').innerHTML.includes('Exercise settings'));
 
+// Calendar-only overview and month navigation remain read-only.
+ok(!html.includes('data-view="weekly"'));
+ok(!html.includes('🗓 Monthly'));
+ok(html.includes('🗓 Calendar'));
+const controlsMarkup=html.slice(html.indexOf('<div class="view-bar"'),html.indexOf('<div class="ios-guide"'));
+ok(controlsMarkup.includes('id="mode-toggle"'));
+ok(!controlsMarkup.includes('navPeriod('));
+ok(!controlsMarkup.includes('class="mode-toggle"'));
+const calendarLayout=app('2026-10-03');
+calendarLayout.run('saveState()');
+const calendarSaved=calendarLayout.memory.get('caprica_workout_v2');
+calendarLayout.run("viewState.anchor='2026-12-31';setViewMode('weekly');navPeriod(1)");
+eq(calendarLayout.run('viewState.mode'),'monthly');
+eq(calendarLayout.run('viewState.anchor'),'2027-01-01');
+calendarLayout.run('navPeriod(-1)');
+eq(calendarLayout.run('viewState.anchor'),'2026-12-01');
+calendarLayout.run("viewState.anchor='2026-03-31';navPeriod(-1)");
+eq(calendarLayout.run('viewState.anchor'),'2026-02-01');
+const calendarMarkup=calendarLayout.run('renderMonth()');
+const monthHeader=calendarMarkup.slice(calendarMarkup.indexOf('calendar-month-nav'),calendarMarkup.indexOf('calendar-today'));
+ok(monthHeader.includes('Previous month'));
+ok(monthHeader.includes('Next month'));
+ok(monthHeader.indexOf('Previous month') < monthHeader.indexOf('February 2026'));
+ok(monthHeader.indexOf('Next month') > monthHeader.indexOf('February 2026'));
+calendarLayout.run('navToday()');
+eq(calendarLayout.run('viewState.anchor'),'2026-10-03');
+calendarLayout.run("goToDay('2026-10-02');backToMonth()");
+eq(calendarLayout.el('view-bar').style.display,'');
+eq(calendarLayout.el('mode-toggle').style.display,'');
+calendarLayout.run("switchSection('food')");
+eq(calendarLayout.el('view-bar').style.display,'none');
+calendarLayout.run("switchSection('workout')");
+eq(calendarLayout.el('view-bar').style.display,'');
+eq(calendarLayout.memory.get('caprica_workout_v2'),calendarSaved);
+
 const a=app();
 eq(a.run("projection().firstDate"),'2026-09-21');
 eq(a.run("Array.from({length:14},(_,i)=>getDayType(addDays('2026-09-21',i)))"),

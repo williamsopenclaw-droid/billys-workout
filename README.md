@@ -11,6 +11,8 @@ Everything you log is saved on the device first, so the app keeps working with n
 ## Everyday use
 
 ### Workout tab
+Use **Calendar** with **Gym / Travel** beside it. The arrows next to the month name move between months; **Today** returns to the current month.
+
 The calendar shows what's next (weekday Upper A / Lower A / Upper B / Lower B in gym mode; Travel has its own schedule). Tap a day to open it, log reps and weights, and the app suggests weight increases once you hit every target — you confirm them.
 
 Tap an exercise name → **Exercise settings** → **Swap exercise** to choose a variation, or use **Add Exercise**. Under **Back** you'll find narrow/wide/neutral pull-ups, bent-over/chest-supported dumbbell rows, and the dumbbell pullover (upper-body squat). The reverse crossover dumbbell lunge is under **Quads**. Each variation has its own working weight and previous-session history. New dumbbell weights start blank. Existing workouts retain their original exercise names.
